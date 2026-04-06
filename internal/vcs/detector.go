@@ -27,6 +27,9 @@ func (g GitVCS) DiffCmd(targetBranch, path string) tea.Cmd {
 		return msg
 	}
 }
+func (g GitVCS) DiffSync(targetBranch, path string) string {
+	return git.DiffSync(targetBranch, path)
+}
 func (g GitVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	gitCmd := git.OpenEditorCmd(path, lineNumber, targetBranch, editor)
 	return func() tea.Msg {
@@ -65,6 +68,9 @@ func (h HgVCS) DiffCmd(targetBranch, path string) tea.Cmd {
 		}
 		return msg
 	}
+}
+func (h HgVCS) DiffSync(targetBranch, path string) string {
+	return hg.DiffSync(targetBranch, path)
 }
 func (h HgVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	hgCmd := hg.OpenEditorCmd(path, lineNumber, targetBranch, editor)

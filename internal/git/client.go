@@ -88,6 +88,29 @@ func DiffCmd(targetBranch, path string) tea.Cmd {
 	}
 }
 
+func DiffSync(targetBranch, path string) string {
+	out, err := gitCmd("diff", "--color=always", targetBranch, "--", path).Output()
+	if err != nil {
+		return ""
+	}
+	content := string(out)
+	if content == "" {
+		if _, err := os.Stat(path); err == nil {
+			out, _ = exec.Command("git", "diff", "--color=always", "--no-index", "/dev/null", path).Output()
+			content = string(out)
+		}
+	}
+	return content
+}
+
+func GetRepoRoot() string {
+	out, err := gitCmd("rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	var args []string
 	if lineNumber > 0 {
@@ -96,6 +119,9 @@ func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor stri
 	args = append(args, path)
 
 	c := exec.Command(editor, args...)
+	if root := GetRepoRoot(); root != "" {
+		c.Dir = root
+	}
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	c.Env = append(os.Environ(), fmt.Sprintf("DIFI_TARGET=%s", targetBranch))
 

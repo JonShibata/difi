@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -13,6 +14,12 @@ import (
 	"github.com/xguot/difi/internal/tree"
 	"github.com/xguot/difi/internal/vcs"
 )
+
+type GlobalMatch struct {
+	FilePath string
+	Line     int    // line index within that file's diff
+	Text     string // the matching line text (stripped)
+}
 
 type Focus int
 
@@ -23,6 +30,7 @@ const (
 
 var ansiRe = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
 var bgAnsiRe = regexp.MustCompile(`\x1b\[48;2;\d+;\d+;\d+m|\x1b\[4[0-9]m`)
+var resetAnsiRe = regexp.MustCompile(`\x1b\[0m`)
 
 type StatsMsg struct {
 	Added   int
@@ -59,6 +67,18 @@ type Model struct {
 	inputBuffer string
 	pendingZ    bool
 
+	// Search state
+	searchMode    bool
+	searchInput   textinput.Model
+	searchQuery   string
+	searchMatches []int // line indices in diffLines that match
+	searchIndex   int   // current position in searchMatches
+
+	// Cross-file search
+	globalSearchMode    bool
+	globalSearchResults []GlobalMatch
+	globalSearchIndex   int
+
 	focus    Focus
 	showHelp bool
 	flatMode bool
@@ -94,6 +114,10 @@ func NewModel(cfg config.Config, targetBranch string, pipedDiff string, vcsClien
 	l.SetShowPagination(false)
 	l.DisableQuitKeybindings()
 
+	ti := textinput.New()
+	ti.Prompt = "/"
+	ti.CharLimit = 256
+
 	m := Model{
 		fileList:      l,
 		treeState:     t,
@@ -107,6 +131,7 @@ func NewModel(cfg config.Config, targetBranch string, pipedDiff string, vcsClien
 		flatMode:      flatMode,
 		inputBuffer:   "",
 		pendingZ:      false,
+		searchInput:   ti,
 		pipedDiff:     pipedDiff,
 		vcs:           vcsClient,
 		visualMode:    false,
@@ -325,4 +350,157 @@ func (m *Model) updateSizes() {
 func (m *Model) updateTreeFocus() {
 	m.treeDelegate.Focused = (m.focus == FocusTree)
 	m.fileList.SetDelegate(m.treeDelegate)
+}
+
+// --- Search ---
+
+func (m *Model) findMatches() {
+	m.searchMatches = nil
+	if m.searchQuery == "" {
+		return
+	}
+	q := strings.ToLower(m.searchQuery)
+	for i, line := range m.diffLines {
+		if strings.Contains(strings.ToLower(stripAnsi(line)), q) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+}
+
+func (m *Model) jumpToMatch(idx int) {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	if idx < 0 {
+		idx = len(m.searchMatches) - 1
+	} else if idx >= len(m.searchMatches) {
+		idx = 0
+	}
+	m.searchIndex = idx
+	m.diffCursor = m.searchMatches[idx]
+	m.centerDiffCursor()
+}
+
+func (m *Model) searchNext() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	// Find next match after current cursor
+	for i, lineIdx := range m.searchMatches {
+		if lineIdx > m.diffCursor {
+			m.jumpToMatch(i)
+			return
+		}
+	}
+	// Wrap around
+	m.jumpToMatch(0)
+}
+
+func (m *Model) searchPrev() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	// Find previous match before current cursor
+	for i := len(m.searchMatches) - 1; i >= 0; i-- {
+		if m.searchMatches[i] < m.diffCursor {
+			m.jumpToMatch(i)
+			return
+		}
+	}
+	// Wrap around
+	m.jumpToMatch(len(m.searchMatches) - 1)
+}
+
+// --- Global (cross-file) search ---
+
+func (m *Model) globalSearch() {
+	m.globalSearchResults = nil
+	if m.searchQuery == "" {
+		return
+	}
+	q := strings.ToLower(m.searchQuery)
+
+	// Get all file paths from the tree
+	for _, item := range m.fileList.Items() {
+		ti, ok := item.(tree.TreeItem)
+		if !ok || ti.IsDir {
+			continue
+		}
+
+		var diffContent string
+		if m.pipedDiff != "" {
+			diffContent = m.vcs.ExtractFileDiff(m.pipedDiff, ti.FullPath)
+		} else {
+			diffContent = m.vcs.DiffSync(m.targetBranch, ti.FullPath)
+		}
+
+		for i, line := range strings.Split(diffContent, "\n") {
+			clean := stripAnsi(line)
+			if strings.Contains(strings.ToLower(clean), q) {
+				m.globalSearchResults = append(m.globalSearchResults, GlobalMatch{
+					FilePath: ti.FullPath,
+					Line:     i,
+					Text:     clean,
+				})
+			}
+		}
+	}
+	m.globalSearchIndex = 0
+}
+
+func (m *Model) globalNext() tea.Cmd {
+	if len(m.globalSearchResults) == 0 {
+		return nil
+	}
+	m.globalSearchIndex++
+	if m.globalSearchIndex >= len(m.globalSearchResults) {
+		m.globalSearchIndex = 0
+	}
+	return m.jumpToGlobalMatch()
+}
+
+func (m *Model) globalPrev() tea.Cmd {
+	if len(m.globalSearchResults) == 0 {
+		return nil
+	}
+	m.globalSearchIndex--
+	if m.globalSearchIndex < 0 {
+		m.globalSearchIndex = len(m.globalSearchResults) - 1
+	}
+	return m.jumpToGlobalMatch()
+}
+
+func (m *Model) jumpToGlobalMatch() tea.Cmd {
+	if len(m.globalSearchResults) == 0 {
+		return nil
+	}
+	match := m.globalSearchResults[m.globalSearchIndex]
+
+	// Switch to the file if needed
+	if match.FilePath != m.selectedPath {
+		// Find and select the file in the tree
+		for idx, item := range m.fileList.Items() {
+			if ti, ok := item.(tree.TreeItem); ok && ti.FullPath == match.FilePath {
+				m.fileList.Select(idx)
+				m.selectedPath = match.FilePath
+				m.diffCursor = 0
+				m.diffViewport.GotoTop()
+
+				// Load the diff, then jump to line on receipt
+				if m.pipedDiff != "" {
+					return func() tea.Msg {
+						return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, match.FilePath)}
+					}
+				}
+				return m.vcs.DiffCmd(m.targetBranch, match.FilePath)
+			}
+		}
+	}
+
+	// Same file — just jump to the line
+	if match.Line < len(m.diffLines) {
+		m.diffCursor = match.Line
+		m.centerDiffCursor()
+	}
+	return nil
 }

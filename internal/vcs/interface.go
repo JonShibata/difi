@@ -7,6 +7,7 @@ type VCS interface {
 	GetRepoName() string
 	ListChangedFiles(targetBranch string) ([]string, error)
 	DiffCmd(targetBranch, path string) tea.Cmd
+	DiffSync(targetBranch, path string) string
 	OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd
 	DiffStats(targetBranch string) (added int, deleted int, err error)
 	DiffStatsByFile(targetBranch string) (map[string][2]int, error)

@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/v2/quick"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/xguot/difi/internal/tree"
 	"github.com/xguot/difi/internal/vcs"
@@ -32,6 +34,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
+		// --- Search input mode ---
+		if m.searchMode {
+			switch msg.String() {
+			case "enter":
+				m.searchMode = false
+				m.searchQuery = m.searchInput.Value()
+				m.searchInput.Blur()
+				m.focus = FocusDiff
+				m.updateTreeFocus()
+				m.findMatches()
+				if len(m.searchMatches) > 0 {
+					m.jumpToMatch(0)
+				}
+				// Also run global search
+				m.globalSearch()
+				m.globalSearchMode = len(m.globalSearchResults) > 0
+				return m, nil
+			case "esc":
+				m.searchMode = false
+				m.searchInput.Blur()
+				m.searchInput.SetValue("")
+				return m, nil
+			default:
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				return m, cmd
+			}
+		}
+
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -252,6 +282,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputBuffer = ""
 			}
 
+		case "/":
+			m.searchMode = true
+			m.searchInput.SetValue("")
+			m.searchInput.Focus()
+			m.inputBuffer = ""
+			return m, textinput.Blink
+
+		case "n":
+			if m.globalSearchMode {
+				cmd = m.globalNext()
+				return m, cmd
+			} else if m.searchQuery != "" {
+				m.searchNext()
+			}
+			m.inputBuffer = ""
+
+		case "N":
+			if m.globalSearchMode {
+				cmd = m.globalPrev()
+				return m, cmd
+			} else if m.searchQuery != "" {
+				m.searchPrev()
+			}
+			m.inputBuffer = ""
+
 		default:
 			m.inputBuffer = ""
 		}
@@ -326,13 +381,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isGitTheme {
 				hlLines = append(hlLines, codeContent)
 			} else {
-				var buf strings.Builder
-				err := quick.Highlight(&buf, codeContent, ext, "terminal16m", "nord")
-				if err == nil && buf.String() != "" {
-					hlLines = append(hlLines, strings.TrimSuffix(buf.String(), "\n"))
-				} else {
-					hlLines = append(hlLines, codeContent)
-				}
+				// Collect for batch highlighting below
+				hlLines = append(hlLines, codeContent)
 			}
 		}
 
@@ -345,11 +395,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hlLines = hlLines[:len(hlLines)-1]
 		}
 
+		// Batch-highlight all lines together so chroma tracks multi-line
+		// comment state (/* ... */, docstrings, etc.)
+		if !isGitTheme && len(hlLines) > 0 {
+			chromaTheme := "nord"
+			if !lipgloss.HasDarkBackground() {
+				chromaTheme = "github"
+			}
+			allCode := strings.Join(hlLines, "\n")
+			var buf strings.Builder
+			err := quick.Highlight(&buf, allCode, ext, "terminal16m", chromaTheme)
+			if err == nil && buf.String() != "" {
+				highlighted := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+				if len(highlighted) == len(hlLines) {
+					hlLines = highlighted
+				}
+			}
+		}
+
 		m.diffLines = cleanLines
 		m.diffHighlighted = hlLines
 		m.currentFileAdded = added
 		m.currentFileDeleted = deleted
 		m.diffCursor = m.snapCursor(0, 1)
+
+		// Re-apply search matches after loading new diff
+		if m.searchQuery != "" {
+			m.findMatches()
+			// If global search, jump to the match line in this file
+			if m.globalSearchMode && len(m.globalSearchResults) > 0 {
+				match := m.globalSearchResults[m.globalSearchIndex]
+				if match.FilePath == m.selectedPath && match.Line < len(m.diffLines) {
+					m.diffCursor = match.Line
+					m.centerDiffCursor()
+				} else if len(m.searchMatches) > 0 {
+					m.jumpToMatch(0)
+				}
+			} else if len(m.searchMatches) > 0 {
+				m.jumpToMatch(0)
+			}
+		}
 
 	case vcs.EditorFinishedMsg:
 		if m.pipedDiff != "" {

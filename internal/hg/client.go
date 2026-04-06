@@ -104,6 +104,21 @@ func DiffCmd(target, path string) tea.Cmd {
 	}
 }
 
+func DiffSync(target, path string) string {
+	out, err := hgCmd("diff", "--change", target, path).Output()
+	if err != nil {
+		return ""
+	}
+	content := string(out)
+	if content == "" {
+		if _, err := os.Stat(path); err == nil {
+			out, _ = exec.Command("hg", "diff", "--git", "/dev/null", path).Output()
+			content = string(out)
+		}
+	}
+	return content
+}
+
 func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	var args []string
 	if lineNumber > 0 {

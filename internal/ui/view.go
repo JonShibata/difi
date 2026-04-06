@@ -12,6 +12,15 @@ import (
 	"github.com/xguot/difi/internal/vcs"
 )
 
+func (m Model) isSearchMatch(lineIdx int) bool {
+	for _, idx := range m.searchMatches {
+		if idx == lineIdx {
+			return true
+		}
+	}
+	return false
+}
+
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
@@ -73,7 +82,13 @@ func (m Model) View() string {
 				cleanLine := stripAnsi(rawLine)
 
 				if isDiffMetadata(cleanLine) {
-					if end < len(m.diffLines) {
+					if strings.HasPrefix(cleanLine, "@@") {
+						// Render hunk header as a visible blue separator
+						hunkText := "  " + cleanLine + strings.Repeat(" ", maxLineWidth)
+						hunkText = ansi.Truncate(hunkText, maxLineWidth, "")
+						line := HunkHeaderStyle.Copy().Width(maxLineWidth).Render(hunkText)
+						renderedDiff.WriteString(line + "\n")
+					} else if end < len(m.diffLines) {
 						end++
 					}
 					continue
@@ -100,9 +115,13 @@ func (m Model) View() string {
 					}
 				}
 
+				isMatch := m.searchQuery != "" && m.isSearchMatch(i)
+
 				separator := "│"
 				if isCursor {
 					separator = "┃"
+				} else if isMatch {
+					separator = "▶"
 				}
 
 				var gutterStr string
@@ -184,7 +203,30 @@ func (m Model) View() string {
 					}
 
 					hlCode = ansi.Truncate(hlCode, maxLineWidth-4, "")
-					line = gutter + hlCode
+					if isAdd || isDel {
+						// Replace ANSI resets with reset+bg so background persists
+						// through syntax-highlighted segments
+						var bgAnsi string
+						if isAdd {
+							r, g, b, _ := DiffAddLineStyle.GetBackground().RGBA()
+							bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
+						} else {
+							r, g, b, _ := DiffDelLineStyle.GetBackground().RGBA()
+							bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
+						}
+						hlCode = resetAnsiRe.ReplaceAllString(hlCode, "\x1b[0m"+bgAnsi)
+						hlCode = bgAnsi + hlCode + "\x1b[0m"
+
+						fullLine := gutter + hlCode
+						visibleLen := lipgloss.Width(fullLine)
+						padLen := maxLineWidth - visibleLen
+						if padLen > 0 {
+							fullLine += bgAnsi + strings.Repeat(" ", padLen) + "\x1b[0m"
+						}
+						line = fullLine
+					} else {
+						line = gutter + hlCode
+					}
 				}
 
 				renderedDiff.WriteString(lineNumRendered + line + "\n")
@@ -277,18 +319,42 @@ func (m Model) renderTopBar() string {
 }
 
 func (m Model) viewStatusBar() string {
-	shortcutsStyle := StatusKeyStyle.Copy().Background(nord0)
-	shortcuts := shortcutsStyle.Render("? Help  q Quit  Tab Switch  V Visual  f Flat")
+	if m.searchMode {
+		input := m.searchInput.View()
+		availWidth := m.width - lipgloss.Width(input)
+		if availWidth < 0 {
+			availWidth = 0
+		}
+		paddingStyle := lipgloss.NewStyle().Background(barBg)
+		padding := paddingStyle.Render(strings.Repeat(" ", availWidth))
+		return lipgloss.JoinHorizontal(lipgloss.Top, input, padding)
+	}
 
-	availWidth := m.width - lipgloss.Width(shortcuts)
+	shortcutsStyle := StatusKeyStyle.Copy().Background(barBg)
+	shortcuts := shortcutsStyle.Render("? Help  / Search  q Quit  Tab Switch  V Visual  f Flat")
+
+	rightInfo := ""
+	if m.searchQuery != "" {
+		matchCount := len(m.searchMatches)
+		if m.globalSearchMode {
+			rightInfo = fmt.Sprintf(" [%d/%d global] ", m.globalSearchIndex+1, len(m.globalSearchResults))
+		} else if matchCount > 0 {
+			rightInfo = fmt.Sprintf(" [%d/%d] ", m.searchIndex+1, matchCount)
+		} else {
+			rightInfo = " [no match] "
+		}
+	}
+
+	rightRendered := shortcutsStyle.Render(rightInfo)
+	availWidth := m.width - lipgloss.Width(shortcuts) - lipgloss.Width(rightRendered)
 	if availWidth < 0 {
 		availWidth = 0
 	}
 
-	paddingStyle := lipgloss.NewStyle().Background(nord0)
+	paddingStyle := lipgloss.NewStyle().Background(barBg)
 	padding := paddingStyle.Render(strings.Repeat(" ", availWidth))
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, shortcuts, padding)
+	return lipgloss.JoinHorizontal(lipgloss.Top, shortcuts, padding, rightRendered)
 }
 
 func (m Model) renderHelpDrawer() string {
@@ -311,9 +377,12 @@ func (m Model) renderHelpDrawer() string {
 	col5 := lipgloss.JoinVertical(lipgloss.Left,
 		HelpTextStyle.Render("V     Visual Mode"),
 		HelpTextStyle.Render("f     Flat Mode"),
-		HelpTextStyle.Render("esc   Cancel Visual"),
+		HelpTextStyle.Render("esc   Cancel"),
 	)
-
+	col6 := lipgloss.JoinVertical(lipgloss.Left,
+		HelpTextStyle.Render("/     Search"),
+		HelpTextStyle.Render("n/N   Next/Prev"),
+	)
 	return HelpDrawerStyle.Copy().
 		Width(m.width).
 		Render(lipgloss.JoinHorizontal(lipgloss.Top,
@@ -321,7 +390,8 @@ func (m Model) renderHelpDrawer() string {
 			col2, lipgloss.NewStyle().Width(4).Render(""),
 			col3, lipgloss.NewStyle().Width(4).Render(""),
 			col4, lipgloss.NewStyle().Width(4).Render(""),
-			col5,
+			col5, lipgloss.NewStyle().Width(4).Render(""),
+			col6,
 		))
 }
 
