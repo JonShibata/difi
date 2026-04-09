@@ -420,7 +420,6 @@ func (m *Model) globalSearch() {
 	}
 	q := strings.ToLower(m.searchQuery)
 
-	// Get all file paths from the tree
 	for _, item := range m.fileList.Items() {
 		ti, ok := item.(tree.TreeItem)
 		if !ok || ti.IsDir {
@@ -431,18 +430,32 @@ func (m *Model) globalSearch() {
 		if m.pipedDiff != "" {
 			diffContent = m.vcs.ExtractFileDiff(m.pipedDiff, ti.FullPath)
 		} else {
+			// Non-piped: fetch diff synchronously (safe — just runs git/hg diff)
 			diffContent = m.vcs.DiffSync(m.targetBranch, ti.FullPath)
 		}
+		if diffContent == "" {
+			continue
+		}
 
-		for i, line := range strings.Split(diffContent, "\n") {
+		// Only search lines from @@ onward (matching diffLines in the viewer)
+		foundHunk := false
+		lineIdx := 0
+		for _, line := range strings.Split(diffContent, "\n") {
 			clean := stripAnsi(line)
+			if strings.HasPrefix(clean, "@@") {
+				foundHunk = true
+			}
+			if !foundHunk {
+				continue
+			}
 			if strings.Contains(strings.ToLower(clean), q) {
 				m.globalSearchResults = append(m.globalSearchResults, GlobalMatch{
 					FilePath: ti.FullPath,
-					Line:     i,
+					Line:     lineIdx,
 					Text:     clean,
 				})
 			}
+			lineIdx++
 		}
 	}
 	m.globalSearchIndex = 0

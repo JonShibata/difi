@@ -39,15 +39,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				m.searchMode = false
-				m.searchQuery = m.searchInput.Value()
+				query := m.searchInput.Value()
 				m.searchInput.Blur()
+				if query == "" {
+					return m, nil
+				}
+				m.searchQuery = query
 				m.focus = FocusDiff
 				m.updateTreeFocus()
 				m.findMatches()
 				if len(m.searchMatches) > 0 {
 					m.jumpToMatch(0)
 				}
-				// Also run global search
 				m.globalSearch()
 				m.globalSearchMode = len(m.globalSearchResults) > 0
 				return m, nil
@@ -108,6 +111,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "esc":
 			m.visualMode = false
+			m.searchQuery = ""
+			m.searchMatches = nil
+			m.globalSearchMode = false
+			m.globalSearchResults = nil
 			m.inputBuffer = ""
 
 		case "tab":
@@ -295,6 +302,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			} else if m.searchQuery != "" {
 				m.searchNext()
+				m.inputBuffer = ""
+				return m, nil
 			}
 			m.inputBuffer = ""
 
@@ -304,6 +313,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			} else if m.searchQuery != "" {
 				m.searchPrev()
+				m.inputBuffer = ""
+				return m, nil
 			}
 			m.inputBuffer = ""
 
