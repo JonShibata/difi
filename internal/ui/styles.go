@@ -79,6 +79,10 @@ var (
 
 	MatchHighlightBgAnsi string
 
+	CursorNormalBgAnsi string
+	CursorAddBgAnsi    string
+	CursorDelBgAnsi    string
+
 	// Dynamic full-line cursor styles
 	CursorNormalStyle lipgloss.Style
 	CursorAddStyle    lipgloss.Style
@@ -136,9 +140,15 @@ func InitStyles(cfg config.Config) {
 		CursorNormalStyle = lipgloss.NewStyle().Background(lipgloss.Color("#434C5E")).Foreground(lipgloss.Color("#ECEFF4"))
 		CursorAddStyle = lipgloss.NewStyle().Background(lipgloss.Color("#A3E4D7")).Foreground(lipgloss.Color("#1A251E"))
 		CursorDelStyle = lipgloss.NewStyle().Background(lipgloss.Color("#F5B7B1")).Foreground(lipgloss.Color("#2D1A1A"))
+		CursorNormalBgAnsi = hexToBgAnsi("#434C5E")
+		CursorAddBgAnsi = hexToBgAnsi("#A3E4D7")
+		CursorDelBgAnsi = hexToBgAnsi("#F5B7B1")
 	} else {
 		CursorNormalStyle = lipgloss.NewStyle().Background(lipgloss.Color("#D0D0D0")).Foreground(lipgloss.Color("#1A1A1A"))
 		CursorAddStyle = lipgloss.NewStyle().Background(lipgloss.Color("#ACE2B8")).Foreground(lipgloss.Color("#1A251E"))
 		CursorDelStyle = lipgloss.NewStyle().Background(lipgloss.Color("#F5B7B1")).Foreground(lipgloss.Color("#2D1A1A"))
+		CursorNormalBgAnsi = hexToBgAnsi("#D0D0D0")
+		CursorAddBgAnsi = hexToBgAnsi("#ACE2B8")
+		CursorDelBgAnsi = hexToBgAnsi("#F5B7B1")
 	}
 }

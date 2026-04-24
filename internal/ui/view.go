@@ -157,21 +157,51 @@ func (m Model) View() string {
 
 				var line string
 				if isCursor {
-					fullStr := gutterStr + ansi.Truncate(codeContent, maxLineWidth-4, "")
+					var cursorBg string
+					if isAdd {
+						cursorBg = CursorAddBgAnsi
+					} else if isDel {
+						cursorBg = CursorDelBgAnsi
+					} else {
+						cursorBg = CursorNormalBgAnsi
+					}
 
-					visibleLen := lipgloss.Width(fullStr)
+					var hlCode string
+					if isGitTheme {
+						switch {
+						case isAdd:
+							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(codeContent)
+						case isDel:
+							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(codeContent)
+						default:
+							hlCode = codeContent
+						}
+					} else if i < len(m.diffHighlighted) {
+						hlCode = m.diffHighlighted[i]
+						hlCode = bgAnsiRe.ReplaceAllString(hlCode, "")
+					} else {
+						hlCode = codeContent
+					}
+
+					hlCode = ansi.Truncate(hlCode, maxLineWidth-4, "")
+					hlCode = resetAnsiRe.ReplaceAllString(hlCode, "\x1b[0m"+cursorBg)
+
+					fullLine := cursorBg + gutterStr + hlCode
+					visibleLen := lipgloss.Width(fullLine)
 					padLen := maxLineWidth - visibleLen
 					if padLen > 0 {
-						fullStr += strings.Repeat(" ", padLen)
+						fullLine += cursorBg + strings.Repeat(" ", padLen)
 					}
+					fullLine += "\x1b[0m"
 
-					if isAdd {
-						line = CursorAddStyle.Copy().Width(maxLineWidth).Render(fullStr)
-					} else if isDel {
-						line = CursorDelStyle.Copy().Width(maxLineWidth).Render(fullStr)
-					} else {
-						line = CursorNormalStyle.Copy().Width(maxLineWidth).Render(fullStr)
+					if isMatch {
+						plain := gutterStr + codeContent
+						if padLen > 0 {
+							plain += strings.Repeat(" ", padLen)
+						}
+						fullLine = highlightMatchesInRendered(fullLine, plain, m.searchQuery, cursorBg)
 					}
+					line = fullLine
 				} else {
 					var hlCode string
 					var gutter string
