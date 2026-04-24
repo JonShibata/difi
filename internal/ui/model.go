@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,6 +32,14 @@ const (
 var ansiRe = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
 var bgAnsiRe = regexp.MustCompile(`\x1b\[48;2;\d+;\d+;\d+m|\x1b\[4[0-9]m`)
 var resetAnsiRe = regexp.MustCompile(`\x1b\[0m`)
+
+// RefreshedPipedDiffMsg carries the output of re-running DIFI_REFRESH_CMD
+// after $EDITOR exits. The Update loop replaces m.pipedDiff with Content
+// and rebuilds the file tree, current diff, and stats.
+type RefreshedPipedDiffMsg struct {
+	Content string
+	Err     error
+}
 
 type StatsMsg struct {
 	Added   int
@@ -85,11 +94,12 @@ type Model struct {
 
 	width, height int
 
-	pipedDiff string
-	vcs       vcs.VCS
+	pipedDiff  string
+	refreshCmd string // shell command run via `sh -c` to refresh pipedDiff
+	vcs        vcs.VCS
 }
 
-func NewModel(cfg config.Config, targetBranch string, pipedDiff string, vcsClient vcs.VCS, flatMode bool) Model {
+func NewModel(cfg config.Config, targetBranch string, pipedDiff string, refreshCmd string, vcsClient vcs.VCS, flatMode bool) Model {
 	InitStyles(cfg)
 
 	var files []string
@@ -133,6 +143,7 @@ func NewModel(cfg config.Config, targetBranch string, pipedDiff string, vcsClien
 		pendingZ:      false,
 		searchInput:   ti,
 		pipedDiff:     pipedDiff,
+		refreshCmd:    refreshCmd,
 		vcs:           vcsClient,
 		visualMode:    false,
 		visualStart:   0,
@@ -168,6 +179,20 @@ func (m Model) Init() tea.Cmd {
 	}
 
 	return tea.Batch(cmds...)
+}
+
+// refreshPipedDiffCmd runs DIFI_REFRESH_CMD via `sh -c` and returns the
+// captured stdout as a RefreshedPipedDiffMsg. Returns nil if no refresh
+// command is configured.
+func (m Model) refreshPipedDiffCmd() tea.Cmd {
+	if m.refreshCmd == "" {
+		return nil
+	}
+	cmd := m.refreshCmd
+	return func() tea.Msg {
+		out, err := exec.Command("sh", "-c", cmd).Output()
+		return RefreshedPipedDiffMsg{Content: string(out), Err: err}
+	}
 }
 
 func (m Model) fetchStatsCmd(target string) tea.Cmd {

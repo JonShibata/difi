@@ -202,6 +202,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.vcs.OpenEditorCmd(m.selectedPath, line, m.targetBranch, m.treeDelegate.Config.Editor)
 			}
 
+		case "r":
+			// Reload: re-run DIFI_REFRESH_CMD and rebuild the view. Useful
+			// when an external process (agent, editor outside difi, build
+			// step) has changed files behind difi's back.
+			if refresh := m.refreshPipedDiffCmd(); refresh != nil {
+				m.inputBuffer = ""
+				return m, refresh
+			}
+
 		case "z":
 			if m.focus == FocusDiff {
 				m.pendingZ = true
@@ -448,12 +457,76 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case vcs.EditorFinishedMsg:
+		// Piped mode + DIFI_REFRESH_CMD: re-run the diff producer so edits
+		// the user just made show up. Without DIFI_REFRESH_CMD the cached
+		// pipedDiff is stale, so we just re-render from cache.
 		if m.pipedDiff != "" {
+			if refresh := m.refreshPipedDiffCmd(); refresh != nil {
+				return m, refresh
+			}
 			return m, func() tea.Msg {
 				return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, m.selectedPath)}
 			}
 		}
 		return m, m.vcs.DiffCmd(m.targetBranch, m.selectedPath)
+
+	case RefreshedPipedDiffMsg:
+		if msg.Err != nil {
+			// Refresh failed — fall back to re-rendering the cached diff so
+			// the user at least sees something. The error is silent; surface
+			// it via a status line in a follow-up if it becomes a problem.
+			return m, func() tea.Msg {
+				return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, m.selectedPath)}
+			}
+		}
+		m.pipedDiff = msg.Content
+
+		// Rebuild file tree — files may have appeared or disappeared between
+		// runs (rare for in-place edits, common after add/delete).
+		files := m.vcs.ParseFilesFromDiff(m.pipedDiff)
+		t := tree.New(files)
+		items := t.Items(m.flatMode)
+		m.treeState = t
+		m.fileList.SetItems(items)
+
+		// Preserve selection if the file still exists; otherwise pick the
+		// first file in the new tree.
+		newSelection := -1
+		for idx, item := range items {
+			ti, ok := item.(tree.TreeItem)
+			if !ok || ti.IsDir {
+				continue
+			}
+			if ti.FullPath == m.selectedPath {
+				newSelection = idx
+				break
+			}
+			if newSelection == -1 {
+				newSelection = idx
+			}
+		}
+		if newSelection >= 0 {
+			m.fileList.Select(newSelection)
+			if ti, ok := items[newSelection].(tree.TreeItem); ok {
+				m.selectedPath = ti.FullPath
+			}
+		} else {
+			m.selectedPath = ""
+		}
+
+		// Reset viewport to top of the (possibly different) file diff.
+		m.diffCursor = 0
+		m.diffViewport.GotoTop()
+
+		var refreshCmds []tea.Cmd
+		if m.selectedPath != "" {
+			selected := m.selectedPath
+			refreshCmds = append(refreshCmds, func() tea.Msg {
+				return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, selected)}
+			})
+		}
+		refreshCmds = append(refreshCmds, m.computePipedStatsCmd())
+		return m, tea.Batch(refreshCmds...)
 	}
 
 	return m, tea.Batch(cmds...)

@@ -50,6 +50,11 @@ func main() {
 		pipedDiff = string(b)
 	}
 
+	// DIFI_REFRESH_CMD lets a wrapper (e.g. `dvt`) tell difi how to re-run
+	// the diff producer. When set and stdin was piped, difi re-executes this
+	// command via `sh -c` after $EDITOR exits and rebuilds the view.
+	refreshCmd := os.Getenv("DIFI_REFRESH_CMD")
+
 	// Detect or force VCS type
 	var vcsClient vcs.VCS
 	if *forceVCS != "" {
@@ -98,7 +103,7 @@ func main() {
 		}
 	}
 
-	p := tea.NewProgram(ui.NewModel(cfg, target, pipedDiff, vcsClient, *flat), opts...)
+	p := tea.NewProgram(ui.NewModel(cfg, target, pipedDiff, refreshCmd, vcsClient, *flat), opts...)
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
