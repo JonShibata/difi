@@ -31,14 +31,17 @@ func (g GitVCS) DiffSync(targetBranch, path string) string {
 	return git.DiffSync(targetBranch, path)
 }
 func (g GitVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
-	gitCmd := git.OpenEditorCmd(path, lineNumber, targetBranch, editor)
-	return func() tea.Msg {
-		msg := gitCmd()
-		if gitMsg, ok := msg.(git.EditorFinishedMsg); ok {
-			return EditorFinishedMsg{Err: gitMsg.Err}
-		}
-		return msg
-	}
+	// tea.ExecProcess wraps the *exec.Cmd in an internal execMsg whose
+	// callback fires only after the editor actually exits. The outer
+	// `func() tea.Msg` wrapper pattern (used elsewhere in this file) can't
+	// rewrap that callback's result, so the editor's finish message would
+	// arrive as git.EditorFinishedMsg and Update would silently drop it.
+	// Build the *exec.Cmd here and call tea.ExecProcess ourselves so the
+	// callback returns vcs.EditorFinishedMsg directly.
+	c := git.BuildEditorCmd(path, lineNumber, targetBranch, editor)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return EditorFinishedMsg{Err: err}
+	})
 }
 func (g GitVCS) DiffStats(targetBranch string) (added int, deleted int, err error) {
 	return git.DiffStats(targetBranch)
@@ -73,14 +76,11 @@ func (h HgVCS) DiffSync(targetBranch, path string) string {
 	return hg.DiffSync(targetBranch, path)
 }
 func (h HgVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
-	hgCmd := hg.OpenEditorCmd(path, lineNumber, targetBranch, editor)
-	return func() tea.Msg {
-		msg := hgCmd()
-		if hgMsg, ok := msg.(hg.EditorFinishedMsg); ok {
-			return EditorFinishedMsg{Err: hgMsg.Err}
-		}
-		return msg
-	}
+	// See GitVCS.OpenEditorCmd for the rationale.
+	c := hg.BuildEditorCmd(path, lineNumber, targetBranch, editor)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return EditorFinishedMsg{Err: err}
+	})
 }
 func (h HgVCS) DiffStats(targetBranch string) (added int, deleted int, err error) {
 	return hg.DiffStats(targetBranch)

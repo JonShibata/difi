@@ -111,7 +111,12 @@ func GetRepoRoot() string {
 	return strings.TrimSpace(string(out))
 }
 
-func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
+// BuildEditorCmd assembles the *exec.Cmd that launches $EDITOR on `path`.
+// Split out from OpenEditorCmd so the vcs wrapper can call tea.ExecProcess
+// itself with a callback that returns vcs.EditorFinishedMsg directly —
+// otherwise the editor's finish message arrives as git.EditorFinishedMsg
+// and the Update loop (which only matches vcs.EditorFinishedMsg) drops it.
+func BuildEditorCmd(path string, lineNumber int, targetBranch string, editor string) *exec.Cmd {
 	var args []string
 	if lineNumber > 0 {
 		args = append(args, fmt.Sprintf("+%d", lineNumber))
@@ -124,8 +129,11 @@ func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor stri
 	}
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	c.Env = append(os.Environ(), fmt.Sprintf("DIFI_TARGET=%s", targetBranch))
+	return c
+}
 
-	return tea.ExecProcess(c, func(err error) tea.Msg {
+func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
+	return tea.ExecProcess(BuildEditorCmd(path, lineNumber, targetBranch, editor), func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}
 	})
 }

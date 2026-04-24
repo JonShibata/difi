@@ -119,7 +119,9 @@ func DiffSync(target, path string) string {
 	return content
 }
 
-func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
+// BuildEditorCmd assembles the *exec.Cmd that launches $EDITOR on `path`.
+// See git.BuildEditorCmd for the layering rationale.
+func BuildEditorCmd(path string, lineNumber int, targetBranch string, editor string) *exec.Cmd {
 	var args []string
 	if lineNumber > 0 {
 		args = append(args, fmt.Sprintf("+%d", lineNumber))
@@ -131,10 +133,12 @@ func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor stri
 	if root := getHgRoot(); root != "" {
 		c.Dir = root
 	}
-
 	c.Env = append(os.Environ(), fmt.Sprintf("DIFI_TARGET=%s", targetBranch))
+	return c
+}
 
-	return tea.ExecProcess(c, func(err error) tea.Msg {
+func OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
+	return tea.ExecProcess(BuildEditorCmd(path, lineNumber, targetBranch, editor), func(err error) tea.Msg {
 		return EditorFinishedMsg{Err: err}
 	})
 }
