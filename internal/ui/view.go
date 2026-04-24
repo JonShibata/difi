@@ -203,10 +203,10 @@ func (m Model) View() string {
 					}
 
 					hlCode = ansi.Truncate(hlCode, maxLineWidth-4, "")
+					var bgAnsi string
 					if isAdd || isDel {
 						// Replace ANSI resets with reset+bg so background persists
 						// through syntax-highlighted segments
-						var bgAnsi string
 						if isAdd {
 							r, g, b, _ := DiffAddLineStyle.GetBackground().RGBA()
 							bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
@@ -216,7 +216,13 @@ func (m Model) View() string {
 						}
 						hlCode = resetAnsiRe.ReplaceAllString(hlCode, "\x1b[0m"+bgAnsi)
 						hlCode = bgAnsi + hlCode + "\x1b[0m"
+					}
 
+					if isMatch {
+						hlCode = highlightMatchesInRendered(hlCode, codeContent, m.searchQuery, bgAnsi)
+					}
+
+					if isAdd || isDel {
 						fullLine := gutter + hlCode
 						visibleLen := lipgloss.Width(fullLine)
 						padLen := maxLineWidth - visibleLen

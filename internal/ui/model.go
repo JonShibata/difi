@@ -542,3 +542,82 @@ func (m *Model) jumpToGlobalMatch() tea.Cmd {
 	}
 	return nil
 }
+
+// highlightMatchesInRendered injects background-color ANSI codes around every
+// occurrence of query in the already-rendered (chroma-highlighted) line.
+// Existing chroma foreground colors are preserved; chroma background writes
+// inside a match span are suppressed so the match bg shows through. After
+// each match span, restoreBg (the line's own background, e.g. add/del bg, or
+// "" for context lines) is re-applied so the surrounding styling continues.
+func highlightMatchesInRendered(rendered, plain, query, restoreBg string) string {
+	if query == "" || plain == "" {
+		return rendered
+	}
+	lq := strings.ToLower(query)
+	lp := strings.ToLower(plain)
+
+	type span struct{ start, end int }
+	var spans []span
+	i := 0
+	for i <= len(lp)-len(lq) {
+		idx := strings.Index(lp[i:], lq)
+		if idx < 0 {
+			break
+		}
+		s := i + idx
+		e := s + len(lq)
+		spans = append(spans, span{s, e})
+		i = e
+	}
+	if len(spans) == 0 {
+		return rendered
+	}
+
+	matchBg := MatchHighlightBgAnsi
+	matchEnd := "\x1b[49m" + restoreBg
+
+	var out strings.Builder
+	out.Grow(len(rendered) + len(spans)*32)
+	vis := 0
+	sIdx := 0
+	inMatch := false
+	j := 0
+	for j < len(rendered) {
+		if rendered[j] == 0x1b && j+1 < len(rendered) && rendered[j+1] == '[' {
+			k := j + 2
+			for k < len(rendered) && rendered[k] != 'm' {
+				k++
+			}
+			if k < len(rendered) {
+				k++
+			}
+			esc := rendered[j:k]
+			if inMatch && bgAnsiRe.MatchString(esc) {
+				// Suppress chroma/line bg writes while inside a match span.
+			} else {
+				out.WriteString(esc)
+				if inMatch && esc == "\x1b[0m" {
+					out.WriteString(matchBg)
+				}
+			}
+			j = k
+			continue
+		}
+		for sIdx < len(spans) && vis == spans[sIdx].end {
+			out.WriteString(matchEnd)
+			inMatch = false
+			sIdx++
+		}
+		if sIdx < len(spans) && vis == spans[sIdx].start {
+			out.WriteString(matchBg)
+			inMatch = true
+		}
+		out.WriteByte(rendered[j])
+		j++
+		vis++
+	}
+	if inMatch {
+		out.WriteString(matchEnd)
+	}
+	return out.String()
+}

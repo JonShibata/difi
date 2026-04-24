@@ -1,9 +1,25 @@
 package ui
 
 import (
+	"fmt"
+	"strconv"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/xguot/difi/internal/config"
 )
+
+func hexToBgAnsi(hex string) string {
+	if len(hex) != 7 || hex[0] != '#' {
+		return ""
+	}
+	r, err1 := strconv.ParseUint(hex[1:3], 16, 8)
+	g, err2 := strconv.ParseUint(hex[3:5], 16, 8)
+	b, err3 := strconv.ParseUint(hex[5:7], 16, 8)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return ""
+	}
+	return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+}
 
 var (
 	// Adaptive colors: first value = light bg, second = dark bg
@@ -61,6 +77,8 @@ var (
 	DiffAddLineStyle lipgloss.Style
 	DiffDelLineStyle lipgloss.Style
 
+	MatchHighlightBgAnsi string
+
 	// Dynamic full-line cursor styles
 	CursorNormalStyle lipgloss.Style
 	CursorAddStyle    lipgloss.Style
@@ -107,6 +125,12 @@ func InitStyles(cfg config.Config) {
 
 	DiffAddLineStyle = lipgloss.NewStyle().Background(lipgloss.Color(addBg))
 	DiffDelLineStyle = lipgloss.NewStyle().Background(lipgloss.Color(delBg))
+
+	if lipgloss.HasDarkBackground() {
+		MatchHighlightBgAnsi = hexToBgAnsi("#B8860B")
+	} else {
+		MatchHighlightBgAnsi = hexToBgAnsi("#FFB74D")
+	}
 
 	if lipgloss.HasDarkBackground() {
 		CursorNormalStyle = lipgloss.NewStyle().Background(lipgloss.Color("#434C5E")).Foreground(lipgloss.Color("#ECEFF4"))
