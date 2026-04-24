@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/alecthomas/chroma/v2/quick"
 
 	"github.com/xguot/difi/internal/config"
 	"github.com/xguot/difi/internal/tree"
@@ -252,6 +255,41 @@ func (m *Model) getRepeatCount() int {
 	}
 	m.inputBuffer = ""
 	return count
+}
+
+// parseHunkNewStart returns the starting line in the new file from a unified
+// diff hunk header like "@@ -10,7 +12,8 @@". Returns 0 if it can't parse.
+func parseHunkNewStart(hdr string) int {
+	for _, p := range strings.Fields(hdr) {
+		if !strings.HasPrefix(p, "+") {
+			continue
+		}
+		s := p[1:]
+		if comma := strings.Index(s, ","); comma > 0 {
+			s = s[:comma]
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return 0
+		}
+		return n
+	}
+	return 0
+}
+
+// highlightFile reads path and runs chroma over the whole file, returning the
+// per-line highlighted output. ok=false if the file can't be read or chroma
+// fails.
+func highlightFile(path, ext, theme string) ([]string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	var buf strings.Builder
+	if err := quick.Highlight(&buf, string(data), ext, "terminal16m", theme); err != nil {
+		return nil, false
+	}
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n"), true
 }
 
 func stripAnsi(str string) string {

@@ -416,12 +416,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Batch-highlight all lines together so chroma tracks multi-line
-		// comment state (/* ... */, docstrings, etc.)
+		// comment state (/* ... */, docstrings, etc.) within the hunk.
+		chromaTheme := "nord"
+		if !lipgloss.HasDarkBackground() {
+			chromaTheme = "github"
+		}
 		if !isGitTheme && len(hlLines) > 0 {
-			chromaTheme := "nord"
-			if !lipgloss.HasDarkBackground() {
-				chromaTheme = "github"
-			}
 			allCode := strings.Join(hlLines, "\n")
 			var buf strings.Builder
 			err := quick.Highlight(&buf, allCode, ext, "terminal16m", chromaTheme)
@@ -429,6 +429,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				highlighted := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 				if len(highlighted) == len(hlLines) {
 					hlLines = highlighted
+				}
+			}
+		}
+
+		// Override + and context lines with whole-file highlighting so chroma
+		// has the surrounding context (multi-line comments, docstrings, raw
+		// strings). Falls back silently to the per-hunk highlight if the file
+		// isn't readable or its content has drifted from the diff.
+		if !isGitTheme && m.selectedPath != "" {
+			if fileLines, ok := highlightFile(m.selectedPath, ext, chromaTheme); ok {
+				newLineNum := 0
+				for i, raw := range cleanLines {
+					clean := stripAnsi(raw)
+					if strings.HasPrefix(clean, "@@") {
+						newLineNum = parseHunkNewStart(clean)
+						continue
+					}
+					isPlus := strings.HasPrefix(clean, "+") && !strings.HasPrefix(clean, "+++")
+					isMinus := strings.HasPrefix(clean, "-") && !strings.HasPrefix(clean, "---")
+					isCtx := strings.HasPrefix(clean, " ")
+					if !(isPlus || isMinus || isCtx) {
+						continue
+					}
+					if isMinus {
+						continue // - lines have no new-file counterpart
+					}
+					idx := newLineNum - 1
+					newLineNum++
+					if idx < 0 || idx >= len(fileLines) {
+						continue
+					}
+					if stripAnsi(fileLines[idx]) != clean[1:] {
+						continue // file drifted from diff; keep per-hunk highlight
+					}
+					hlLines[i] = fileLines[idx]
 				}
 			}
 		}
