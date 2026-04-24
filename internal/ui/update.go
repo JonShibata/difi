@@ -198,6 +198,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					line = m.vcs.CalculateFileLine(m.diffLines, 0)
 				}
+				m.preEditPath = m.selectedPath
+				m.preEditLine = line
 				m.inputBuffer = ""
 				return m, m.vcs.OpenEditorCmd(m.selectedPath, line, m.targetBranch, m.treeDelegate.Config.Editor)
 			}
@@ -474,9 +476,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentFileDeleted = deleted
 		m.diffCursor = m.snapCursor(0, 1)
 
-		// Re-apply search matches after loading new diff
+		// Restore cursor to the file line the user was editing, if the
+		// reload was triggered by an editor exit on this same file.
+		restoredFromEdit := false
+		if m.preEditPath != "" && m.preEditPath == m.selectedPath {
+			if idx := findDiffIndexForFileLine(m.diffLines, m.preEditLine); idx >= 0 {
+				m.diffCursor = m.snapCursor(idx, 1)
+				m.centerDiffCursor()
+				restoredFromEdit = true
+			}
+		}
+		m.preEditPath = ""
+		m.preEditLine = 0
+
+		// Re-apply search matches after loading new diff. Skip the auto-jump
+		// when we just restored the cursor from an editor exit — otherwise
+		// the user lands on a stale search hit instead of where they were
+		// editing.
 		if m.searchQuery != "" {
 			m.findMatches()
+		}
+		if m.searchQuery != "" && !restoredFromEdit {
 			// If global search, jump to the match line in this file
 			if m.globalSearchMode && len(m.globalSearchResults) > 0 {
 				match := m.globalSearchResults[m.globalSearchIndex]

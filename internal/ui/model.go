@@ -99,6 +99,12 @@ type Model struct {
 
 	pipedDiff  string
 	refreshCmd string // shell command run via `sh -c` to refresh pipedDiff
+
+	// Cursor restore across editor invocations. Set when launching $EDITOR
+	// and consumed by the next vcs.DiffMsg so the user lands back on the
+	// line they were editing instead of being yanked to the top.
+	preEditPath string
+	preEditLine int
 	vcs        vcs.VCS
 }
 
@@ -255,6 +261,40 @@ func (m *Model) getRepeatCount() int {
 	}
 	m.inputBuffer = ""
 	return count
+}
+
+// findDiffIndexForFileLine returns the diff-line index whose new-file line
+// number is the closest match (<=) to fileLine within the same hunk. Returns
+// -1 if no hunk covers fileLine.
+func findDiffIndexForFileLine(diffLines []string, fileLine int) int {
+	if fileLine < 1 {
+		return -1
+	}
+	newLineNum := 0
+	bestIdx := -1
+	for i, raw := range diffLines {
+		clean := strings.TrimRight(stripAnsi(raw), "\r")
+		if strings.HasPrefix(clean, "@@") {
+			newLineNum = parseHunkNewStart(clean)
+			continue
+		}
+		if newLineNum == 0 {
+			continue
+		}
+		isPlus := strings.HasPrefix(clean, "+") && !strings.HasPrefix(clean, "+++")
+		isCtx := strings.HasPrefix(clean, " ")
+		if !(isPlus || isCtx) {
+			continue
+		}
+		if newLineNum == fileLine {
+			return i
+		}
+		if newLineNum < fileLine {
+			bestIdx = i
+		}
+		newLineNum++
+	}
+	return bestIdx
 }
 
 // parseHunkNewStart returns the starting line in the new file from a unified
