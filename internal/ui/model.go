@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/alecthomas/chroma/v2/quick"
 
@@ -100,6 +101,11 @@ type Model struct {
 	pipedDiff  string
 	refreshCmd string // shell command run via `sh -c` to refresh pipedDiff
 
+	// wrap mirrors cfg.UI.Wrap but is mutable at runtime via the 'w' key.
+	// When true, long lines render on multiple visual rows with a
+	// continuation gutter; when false, they're truncated with "…".
+	wrap bool
+
 	// Cursor restore across editor invocations. Set when launching $EDITOR
 	// and consumed by the next vcs.DiffMsg so the user lands back on the
 	// line they were editing instead of being yanked to the top.
@@ -156,6 +162,7 @@ func NewModel(cfg config.Config, targetBranch string, pipedDiff string, refreshC
 		vcs:           vcsClient,
 		visualMode:    false,
 		visualStart:   0,
+		wrap:          cfg.UI.Wrap,
 	}
 
 	for idx, item := range items {
@@ -356,8 +363,43 @@ func isDiffContentLine(cleanLine string) bool {
 		strings.HasPrefix(cleanLine, "-")
 }
 
+// visualLinesFor returns the number of viewport rows source line `i` will
+// occupy at the current diff-pane width. Returns 1 when wrap is off, when
+// the index is out of range, or for diff metadata. The cursor/scroll math
+// uses this to keep multi-row source lines fully visible.
+func (m *Model) visualLinesFor(i int) int {
+	if !m.wrap || i < 0 || i >= len(m.diffLines) {
+		return 1
+	}
+	cleanLine := stripAnsi(m.diffLines[i])
+	if isDiffMetadata(cleanLine) {
+		return 1
+	}
+	chunkWidth := m.diffViewport.Width - 7 - 4 // gutter(7) + lineno-pane(4) headroom
+	if chunkWidth < 1 {
+		return 1
+	}
+	codeContent := cleanLine
+	if len(codeContent) > 0 && (strings.HasPrefix(codeContent, "+") ||
+		strings.HasPrefix(codeContent, "-") ||
+		strings.HasPrefix(codeContent, " ")) {
+		codeContent = codeContent[1:]
+	}
+	visWidth := lipgloss.Width(codeContent)
+	rows := (visWidth + chunkWidth - 1) / chunkWidth
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
 func (m *Model) setYOffset(offset int) {
-	maxOffset := len(m.diffLines) - m.diffViewport.Height
+	// With wrap on, a source line can occupy multiple visual rows, so the
+	// "fits exactly N source lines" math no longer applies. Bound only at
+	// the lower end and at the last source line; the renderer will stop
+	// drawing once it fills the viewport. The user can never scroll past
+	// the last source line being at the top of the pane.
+	maxOffset := len(m.diffLines) - 1
 	if maxOffset < 0 {
 		maxOffset = 0
 	}
@@ -408,14 +450,60 @@ func (m *Model) snapCursor(idx int, dir int) int {
 func (m *Model) handleScrolling() {
 	if m.diffCursor < m.diffViewport.YOffset {
 		m.setYOffset(m.diffCursor)
-	} else if m.diffCursor >= m.diffViewport.YOffset+m.diffViewport.Height {
-		m.setYOffset(m.diffCursor - m.diffViewport.Height + 1)
+		return
+	}
+
+	// With wrap off this is the original "cursor − height + 1" math. With
+	// wrap on we sum visual rows from YOffset through the cursor; if that
+	// exceeds the viewport we advance YOffset until the cursor's source
+	// line fits at the bottom (or scroll cursor to top if it can't).
+	height := m.diffViewport.Height
+	if height < 1 {
+		height = 1
+	}
+
+	if !m.wrap {
+		if m.diffCursor >= m.diffViewport.YOffset+height {
+			m.setYOffset(m.diffCursor - height + 1)
+		}
+		return
+	}
+
+	// Loop is bounded by (cursor - YOffset), so worst case O(viewport rows).
+	for m.diffViewport.YOffset < m.diffCursor {
+		visRows := 0
+		for i := m.diffViewport.YOffset; i <= m.diffCursor; i++ {
+			visRows += m.visualLinesFor(i)
+		}
+		if visRows <= height {
+			return
+		}
+		m.diffViewport.YOffset++
 	}
 }
 
 func (m *Model) centerDiffCursor() {
-	targetOffset := m.diffCursor - (m.diffViewport.Height / 2)
-	m.setYOffset(targetOffset)
+	// In wrap mode "half the viewport" is in visual rows but YOffset is in
+	// source lines, so naive subtraction overshoots when the cursor's line
+	// (and surrounding lines) wrap. Walk backwards from the cursor summing
+	// visual heights until we've consumed half the viewport.
+	if !m.wrap {
+		targetOffset := m.diffCursor - (m.diffViewport.Height / 2)
+		m.setYOffset(targetOffset)
+		return
+	}
+
+	half := m.diffViewport.Height / 2
+	used := 0
+	target := m.diffCursor
+	for target > 0 {
+		used += m.visualLinesFor(target - 1)
+		if used > half {
+			break
+		}
+		target--
+	}
+	m.setYOffset(target)
 }
 
 func (m *Model) updateSizes() {

@@ -65,10 +65,6 @@ func (m Model) View() string {
 
 			viewportHeight := contentHeight
 			start := m.diffViewport.YOffset
-			end := start + viewportHeight
-			if end > len(m.diffLines) {
-				end = len(m.diffLines)
-			}
 
 			maxLineWidth := m.diffViewport.Width - 7
 			if maxLineWidth < 1 {
@@ -77,7 +73,21 @@ func (m Model) View() string {
 
 			isGitTheme := m.treeDelegate.Config.UI.Theme == "git"
 
-			for i := start; i < end; i++ {
+			// chunkWidth is the visible width available for code (after the
+			// 4-char gutter). When wrap is enabled, ansi.Hardwrap splits the
+			// highlighted line into at-most-chunkWidth-wide segments, each
+			// rendered as its own viewport row with a continuation gutter.
+			chunkWidth := maxLineWidth - 4
+			if chunkWidth < 1 {
+				chunkWidth = 1
+			}
+
+			// visRows counts viewport rows actually emitted. When wrap is on
+			// a single source line can produce multiple viewport rows, so we
+			// stop iterating source lines as soon as visRows fills the viewport.
+			visRows := 0
+
+			for i := start; i < len(m.diffLines) && visRows < viewportHeight; i++ {
 				rawLine := m.diffLines[i]
 				cleanLine := stripAnsi(rawLine)
 
@@ -88,9 +98,11 @@ func (m Model) View() string {
 						hunkText = ansi.Truncate(hunkText, maxLineWidth, "")
 						line := HunkHeaderStyle.Copy().Width(maxLineWidth).Render(hunkText)
 						renderedDiff.WriteString(line + "\n")
-					} else if end < len(m.diffLines) {
-						end++
+						visRows++
 					}
+					// Non-hunk metadata (--- / +++ / index lines) is skipped
+					// silently — it doesn't consume a viewport row, so we don't
+					// extend the loop bound.
 					continue
 				}
 
@@ -124,14 +136,18 @@ func (m Model) View() string {
 					separator = "▶"
 				}
 
-				var gutterStr string
+				var primaryGutter string
 				if isAdd {
-					gutterStr = "+ " + separator + " "
+					primaryGutter = "+ " + separator + " "
 				} else if isDel {
-					gutterStr = "- " + separator + " "
+					primaryGutter = "- " + separator + " "
 				} else {
-					gutterStr = "  " + separator + " "
+					primaryGutter = "  " + separator + " "
 				}
+				// Continuation gutter shown on wrap chunks 2+; the ↪ marker
+				// makes it visually obvious that this row is a continuation
+				// of the line above rather than a fresh diff line.
+				continuationGutter := "  ↪ "
 
 				var numStr string
 				mode := "relative"
@@ -150,122 +166,166 @@ func (m Model) View() string {
 					}
 				}
 
-				lineNumRendered := ""
+				primaryLineNum := ""
 				if numStr != "" {
-					lineNumRendered = LineNumberStyle.Render(numStr)
+					primaryLineNum = LineNumberStyle.Render(numStr)
 				}
+				// Continuation rows get a blank line-number cell of the same
+				// width so the diff content stays vertically aligned.
+				continuationLineNum := LineNumberStyle.Render("")
 
-				var line string
+				// Build the full (un-truncated) highlighted code for this
+				// source line, then split into chunks based on m.wrap. When
+				// wrap is off, chunks has exactly one entry (the truncated
+				// line) — preserving pre-wrap behavior.
+				var fullHlCode string
 				if isCursor {
-					var cursorBg string
-					if isAdd {
-						cursorBg = CursorAddBgAnsi
-					} else if isDel {
-						cursorBg = CursorDelBgAnsi
-					} else {
-						cursorBg = CursorNormalBgAnsi
-					}
-
-					var hlCode string
 					if isGitTheme {
 						switch {
 						case isAdd:
-							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(codeContent)
+							fullHlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(codeContent)
 						case isDel:
-							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(codeContent)
+							fullHlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(codeContent)
 						default:
-							hlCode = codeContent
+							fullHlCode = codeContent
 						}
 					} else if i < len(m.diffHighlighted) {
-						hlCode = m.diffHighlighted[i]
-						hlCode = bgAnsiRe.ReplaceAllString(hlCode, "")
+						fullHlCode = m.diffHighlighted[i]
+						fullHlCode = bgAnsiRe.ReplaceAllString(fullHlCode, "")
 					} else {
-						hlCode = codeContent
+						fullHlCode = codeContent
 					}
-
-					hlCode = ansi.Truncate(hlCode, maxLineWidth-4, "")
-					hlCode = resetAnsiRe.ReplaceAllString(hlCode, "\x1b[0m"+cursorBg)
-
-					fullLine := cursorBg + gutterStr + hlCode
-					visibleLen := lipgloss.Width(fullLine)
-					padLen := maxLineWidth - visibleLen
-					if padLen > 0 {
-						fullLine += cursorBg + strings.Repeat(" ", padLen)
-					}
-					fullLine += "\x1b[0m"
-
-					if isMatch {
-						plain := gutterStr + codeContent
-						if padLen > 0 {
-							plain += strings.Repeat(" ", padLen)
-						}
-						fullLine = highlightMatchesInRendered(fullLine, plain, m.searchQuery, cursorBg)
-					}
-					line = fullLine
 				} else {
-					var hlCode string
-					var gutter string
-
 					if isGitTheme {
 						if isAdd {
-							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(codeContent)
-							gutter = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(gutterStr)
+							fullHlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(codeContent)
 						} else if isDel {
-							hlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(codeContent)
-							gutter = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(gutterStr)
+							fullHlCode = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(codeContent)
 						} else {
-							hlCode = codeContent
-							gutter = DiffCtxGutter.Render(gutterStr)
+							fullHlCode = codeContent
 						}
+					} else if i < len(m.diffHighlighted) {
+						fullHlCode = m.diffHighlighted[i]
+						fullHlCode = bgAnsiRe.ReplaceAllString(fullHlCode, "")
 					} else {
-						if i < len(m.diffHighlighted) {
-							hlCode = m.diffHighlighted[i]
-							hlCode = bgAnsiRe.ReplaceAllString(hlCode, "")
-						}
-
-						if isAdd {
-							gutter = DiffAddGutter.Render(gutterStr)
-						} else if isDel {
-							gutter = DiffDelGutter.Render(gutterStr)
-						} else {
-							gutter = DiffCtxGutter.Render(gutterStr)
-						}
-					}
-
-					hlCode = ansi.Truncate(hlCode, maxLineWidth-4, "")
-					var bgAnsi string
-					if isAdd || isDel {
-						// Replace ANSI resets with reset+bg so background persists
-						// through syntax-highlighted segments
-						if isAdd {
-							r, g, b, _ := DiffAddLineStyle.GetBackground().RGBA()
-							bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
-						} else {
-							r, g, b, _ := DiffDelLineStyle.GetBackground().RGBA()
-							bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
-						}
-						hlCode = resetAnsiRe.ReplaceAllString(hlCode, "\x1b[0m"+bgAnsi)
-						hlCode = bgAnsi + hlCode + "\x1b[0m"
-					}
-
-					if isMatch {
-						hlCode = highlightMatchesInRendered(hlCode, codeContent, m.searchQuery, bgAnsi)
-					}
-
-					if isAdd || isDel {
-						fullLine := gutter + hlCode
-						visibleLen := lipgloss.Width(fullLine)
-						padLen := maxLineWidth - visibleLen
-						if padLen > 0 {
-							fullLine += bgAnsi + strings.Repeat(" ", padLen) + "\x1b[0m"
-						}
-						line = fullLine
-					} else {
-						line = gutter + hlCode
+						fullHlCode = codeContent
 					}
 				}
 
-				renderedDiff.WriteString(lineNumRendered + line + "\n")
+				var hlChunks, plainChunks []string
+				if m.wrap {
+					// ansi.Hardwrap preserves ANSI styles across chunk
+					// boundaries so syntax highlighting survives the wrap.
+					hlChunks = strings.Split(ansi.Hardwrap(fullHlCode, chunkWidth, true), "\n")
+					plainChunks = strings.Split(ansi.Hardwrap(codeContent, chunkWidth, true), "\n")
+				} else {
+					hlChunks = []string{ansi.Truncate(fullHlCode, chunkWidth, "")}
+					plainChunks = []string{ansi.Truncate(codeContent, chunkWidth, "")}
+				}
+				// Defensive: keep hlChunks and plainChunks the same length so
+				// the per-chunk loop below can index both safely.
+				for len(plainChunks) < len(hlChunks) {
+					plainChunks = append(plainChunks, "")
+				}
+
+				for chunkIdx, hlChunk := range hlChunks {
+					if visRows >= viewportHeight {
+						break
+					}
+
+					var gutterStr, lineNumRendered string
+					if chunkIdx == 0 {
+						gutterStr = primaryGutter
+						lineNumRendered = primaryLineNum
+					} else {
+						gutterStr = continuationGutter
+						lineNumRendered = continuationLineNum
+					}
+					plainChunk := plainChunks[chunkIdx]
+
+					var line string
+					if isCursor {
+						var cursorBg string
+						if isAdd {
+							cursorBg = CursorAddBgAnsi
+						} else if isDel {
+							cursorBg = CursorDelBgAnsi
+						} else {
+							cursorBg = CursorNormalBgAnsi
+						}
+
+						code := resetAnsiRe.ReplaceAllString(hlChunk, "\x1b[0m"+cursorBg)
+
+						fullLine := cursorBg + gutterStr + code
+						visibleLen := lipgloss.Width(fullLine)
+						padLen := maxLineWidth - visibleLen
+						if padLen > 0 {
+							fullLine += cursorBg + strings.Repeat(" ", padLen)
+						}
+						fullLine += "\x1b[0m"
+
+						if isMatch {
+							plain := gutterStr + plainChunk
+							if padLen > 0 {
+								plain += strings.Repeat(" ", padLen)
+							}
+							fullLine = highlightMatchesInRendered(fullLine, plain, m.searchQuery, cursorBg)
+						}
+						line = fullLine
+					} else {
+						var gutter string
+						if isGitTheme {
+							if isAdd {
+								gutter = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(gutterStr)
+							} else if isDel {
+								gutter = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(gutterStr)
+							} else {
+								gutter = DiffCtxGutter.Render(gutterStr)
+							}
+						} else {
+							if isAdd {
+								gutter = DiffAddGutter.Render(gutterStr)
+							} else if isDel {
+								gutter = DiffDelGutter.Render(gutterStr)
+							} else {
+								gutter = DiffCtxGutter.Render(gutterStr)
+							}
+						}
+
+						code := hlChunk
+						var bgAnsi string
+						if isAdd || isDel {
+							if isAdd {
+								r, g, b, _ := DiffAddLineStyle.GetBackground().RGBA()
+								bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
+							} else {
+								r, g, b, _ := DiffDelLineStyle.GetBackground().RGBA()
+								bgAnsi = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r>>8, g>>8, b>>8)
+							}
+							code = resetAnsiRe.ReplaceAllString(code, "\x1b[0m"+bgAnsi)
+							code = bgAnsi + code + "\x1b[0m"
+						}
+
+						if isMatch {
+							code = highlightMatchesInRendered(code, plainChunk, m.searchQuery, bgAnsi)
+						}
+
+						if isAdd || isDel {
+							fullLine := gutter + code
+							visibleLen := lipgloss.Width(fullLine)
+							padLen := maxLineWidth - visibleLen
+							if padLen > 0 {
+								fullLine += bgAnsi + strings.Repeat(" ", padLen) + "\x1b[0m"
+							}
+							line = fullLine
+						} else {
+							line = gutter + code
+						}
+					}
+
+					renderedDiff.WriteString(lineNumRendered + line + "\n")
+					visRows++
+				}
 			}
 
 			diffContentStr := "\n" + strings.TrimRight(renderedDiff.String(), "\n")

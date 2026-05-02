@@ -17,6 +17,10 @@ type UIConfig struct {
 	Theme       string `yaml:"theme"`
 	DiffAddBg   string `yaml:"diff_add_bg"`
 	DiffDelBg   string `yaml:"diff_del_bg"`
+	// Wrap controls whether long diff lines wrap onto multiple visual rows
+	// (true) or are truncated with "…" (false, default). Toggled at runtime
+	// with the 'w' key.
+	Wrap bool `yaml:"wrap"`
 }
 
 func Load() Config {

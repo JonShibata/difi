@@ -213,6 +213,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, refresh
 			}
 
+		case "w":
+			// Toggle line wrapping for the diff pane. Off = truncate with "…",
+			// on = wrap onto multiple visual rows with a "↪" continuation
+			// gutter. Recenter so the cursor stays visible after the layout
+			// shift (a wrapping line consumes more rows than before).
+			m.wrap = !m.wrap
+			if m.focus == FocusDiff {
+				m.centerDiffCursor()
+			}
+			m.inputBuffer = ""
+			return m, nil
+
 		case "z":
 			if m.focus == FocusDiff {
 				m.pendingZ = true
