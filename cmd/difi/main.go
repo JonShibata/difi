@@ -12,13 +12,31 @@ import (
 	"github.com/xguot/difi/internal/vcs"
 )
 
-var version = "dev"
+var version = "0.2.5"
 
 func main() {
 	showVersion := flag.Bool("version", false, "Show version")
+	flag.BoolVar(showVersion, "v", false, "Show version (shorthand)")
+
 	plain := flag.Bool("plain", false, "Print a plain summary")
+	flag.BoolVar(plain, "p", false, "Print a plain summary (shorthand)")
+
 	flat := flag.Bool("flat", false, "Use one-line file navigation")
+	flag.BoolVar(flat, "f", false, "Use one-line file navigation (shorthand)")
+
 	forceVCS := flag.String("vcs", "", "Force specific VCS (git or hg)")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s [options] [target]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fmt.Fprintf(os.Stderr, "  -v, --version  Show version\n")
+		fmt.Fprintf(os.Stderr, "  -p, --plain    Print a plain summary\n")
+		fmt.Fprintf(os.Stderr, "  -f, --flat     Use one-line file navigation\n")
+		fmt.Fprintf(os.Stderr, "  --vcs string   Force specific VCS (git or hg)\n")
+		fmt.Fprintf(os.Stderr, "\nTarget:\n")
+		fmt.Fprintf(os.Stderr, "  branch, commit, or tag to compare against (default: HEAD or tip)\n")
+	}
+
 	flag.Parse()
 
 	if *showVersion {
