@@ -95,6 +95,7 @@ git diff | difi
 | `h / l`       | Focus Left (Tree) / Focus Right (Diff)       |
 | `e` / `Enter` | Edit file (opens editor at selected line)    |
 | `c`           | Copy highlighted path (dir or file) to clipboard |
+| `y`           | Yank selected line(s) — visual selection or current line |
 | `?`           | Toggle help drawer                           |
 | `q`           | Quit                                         |
 

@@ -228,6 +228,45 @@ func (m Model) copyPath() string {
 	return m.selectedPath
 }
 
+// copySelection returns the clean code for the diff lines under the current
+// selection — the visual-mode range when active, otherwise the single line at
+// the cursor — along with how many lines it covers. Each line is stripped of
+// its leading +/-/space diff marker, and @@ hunk headers (the only metadata
+// present in diffLines) are skipped, so the result pastes as usable source.
+// Returns ("", 0) when there's nothing copyable.
+func (m Model) copySelection() (string, int) {
+	if len(m.diffLines) == 0 {
+		return "", 0
+	}
+	start, end := m.diffCursor, m.diffCursor
+	if m.visualMode {
+		start, end = m.visualStart, m.diffCursor
+		if start > end {
+			start, end = end, start
+		}
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(m.diffLines) {
+		end = len(m.diffLines) - 1
+	}
+
+	var lines []string
+	for i := start; i <= end; i++ {
+		clean := strings.TrimRight(stripAnsi(m.diffLines[i]), "\r")
+		if isDiffMetadata(clean) {
+			continue
+		}
+		if len(clean) > 0 && (strings.HasPrefix(clean, "+") ||
+			strings.HasPrefix(clean, "-") || strings.HasPrefix(clean, " ")) {
+			clean = clean[1:]
+		}
+		lines = append(lines, clean)
+	}
+	return strings.Join(lines, "\n"), len(lines)
+}
+
 // copyToClipboardCmd copies s to the system clipboard via an OSC52 escape
 // sequence, which works on local terminals, through tmux, and over SSH without
 // shelling out to xclip/pbcopy. The sequence is written to /dev/tty so it

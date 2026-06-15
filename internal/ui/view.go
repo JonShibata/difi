@@ -477,6 +477,7 @@ func (m Model) renderHelpDrawer() string {
 		HelpTextStyle.Render("H/M/L Move Cursor"),
 		HelpTextStyle.Render("e     Edit File"),
 		HelpTextStyle.Render("c     Copy Path"),
+		HelpTextStyle.Render("y     Yank Lines"),
 	)
 	col5 := lipgloss.JoinVertical(lipgloss.Left,
 		HelpTextStyle.Render("V     Visual Mode"),

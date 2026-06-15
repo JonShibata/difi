@@ -240,6 +240,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case "y":
+			// Yank the selected diff line(s) to the clipboard as clean code: the
+			// visual-mode range, or the current line when not in visual mode.
+			// Yanking exits visual mode, like vim.
+			m.inputBuffer = ""
+			if m.focus == FocusDiff {
+				if text, n := m.copySelection(); text != "" {
+					label := "Copied " + strconv.Itoa(n) + " line"
+					if n != 1 {
+						label += "s"
+					}
+					m.copyStatus = label
+					m.visualMode = false
+					return m, copyToClipboardCmd(text)
+				}
+			}
+			return m, nil
+
 		case "z":
 			if m.focus == FocusDiff {
 				m.pendingZ = true

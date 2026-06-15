@@ -40,3 +40,52 @@ func TestCopyPathTreeFocus(t *testing.T) {
 		t.Fatalf("tree focus on file: expected file path, got %q", got)
 	}
 }
+
+func TestCopySelectionSingleLine(t *testing.T) {
+	m := newTestModel([]string{
+		"@@ -1,3 +1,4 @@",
+		" context",
+		"+added line",
+		"-removed line",
+	})
+	m.diffCursor = 2 // "+added line"
+
+	text, n := m.copySelection()
+	if n != 1 || text != "added line" {
+		t.Fatalf("single line: expected (\"added line\", 1), got (%q, %d)", text, n)
+	}
+}
+
+func TestCopySelectionVisualRange(t *testing.T) {
+	m := newTestModel([]string{
+		"@@ -1,3 +1,4 @@",
+		" context",
+		"+added line",
+		"-removed line",
+	})
+	m.visualMode = true
+	m.visualStart = 1
+	m.diffCursor = 3
+
+	text, n := m.copySelection()
+	want := "context\nadded line\nremoved line"
+	if n != 3 || text != want {
+		t.Fatalf("visual range: expected (%q, 3), got (%q, %d)", want, text, n)
+	}
+}
+
+func TestCopySelectionSkipsHunkHeader(t *testing.T) {
+	m := newTestModel([]string{
+		"@@ -1,3 +1,4 @@",
+		"+a",
+		"+b",
+	})
+	m.visualMode = true
+	m.visualStart = 0 // anchored on the @@ hunk header
+	m.diffCursor = 2
+
+	text, n := m.copySelection()
+	if n != 2 || text != "a\nb" {
+		t.Fatalf("skip hunk header: expected (\"a\\nb\", 2), got (%q, %d)", text, n)
+	}
+}
