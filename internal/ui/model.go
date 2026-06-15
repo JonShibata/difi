@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/alecthomas/chroma/v2/quick"
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 
 	"github.com/xguot/difi/internal/config"
 	"github.com/xguot/difi/internal/tree"
@@ -95,6 +96,10 @@ type Model struct {
 	focus    Focus
 	showHelp bool
 	flatMode bool
+
+	// copyStatus holds a transient "Copied <path>" notice shown in the status
+	// bar after the 'c' key. Cleared on the next keypress.
+	copyStatus string
 
 	width, height int
 
@@ -208,6 +213,39 @@ func (m Model) refreshPipedDiffCmd() tea.Cmd {
 	return func() tea.Msg {
 		out, err := exec.Command("sh", "-c", cmd).Output()
 		return RefreshedPipedDiffMsg{Content: string(out), Err: err}
+	}
+}
+
+// copyPath returns the value the 'c' key copies to the clipboard: the path of
+// the highlighted tree item when the tree is focused (a directory's path, or a
+// file's path), otherwise the file whose diff is shown in the right pane.
+func (m Model) copyPath() string {
+	if m.focus == FocusTree {
+		if item, ok := m.fileList.SelectedItem().(tree.TreeItem); ok {
+			return item.FullPath
+		}
+	}
+	return m.selectedPath
+}
+
+// copyToClipboardCmd copies s to the system clipboard via an OSC52 escape
+// sequence, which works on local terminals, through tmux, and over SSH without
+// shelling out to xclip/pbcopy. The sequence is written to /dev/tty so it
+// reaches the terminal directly rather than racing Bubble Tea's renderer on
+// stdout; stdout is the fallback when /dev/tty can't be opened.
+func copyToClipboardCmd(s string) tea.Cmd {
+	return func() tea.Msg {
+		seq := osc52.New(s)
+		if os.Getenv("TMUX") != "" {
+			seq = seq.Tmux()
+		}
+		if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
+			seq.WriteTo(tty)
+			tty.Close()
+		} else {
+			seq.WriteTo(os.Stdout)
+		}
+		return nil
 	}
 }
 

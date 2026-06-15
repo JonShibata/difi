@@ -65,6 +65,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Any keypress dismisses a lingering "Copied" notice; the 'c' case
+		// below sets a fresh one after this clear.
+		m.copyStatus = ""
+
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -223,6 +227,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.centerDiffCursor()
 			}
 			m.inputBuffer = ""
+			return m, nil
+
+		case "c":
+			// Copy the highlighted path to the clipboard. In the tree that's the
+			// selected directory or file; in the diff pane it's the file being
+			// viewed. Both come straight from the tree item's full path.
+			m.inputBuffer = ""
+			if path := m.copyPath(); path != "" {
+				m.copyStatus = "Copied " + path
+				return m, copyToClipboardCmd(path)
+			}
 			return m, nil
 
 		case "z":

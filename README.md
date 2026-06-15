@@ -94,6 +94,7 @@ git diff | difi
 | `j / k`       | Move cursor down / up                        |
 | `h / l`       | Focus Left (Tree) / Focus Right (Diff)       |
 | `e` / `Enter` | Edit file (opens editor at selected line)    |
+| `c`           | Copy highlighted path (dir or file) to clipboard |
 | `?`           | Toggle help drawer                           |
 | `q`           | Quit                                         |
 
