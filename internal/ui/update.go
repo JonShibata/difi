@@ -67,7 +67,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Any keypress dismisses a lingering "Copied" notice; the 'c' case
 		// below sets a fresh one after this clear.
-		m.copyStatus = ""
+		m.statusNotice = ""
 
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -235,7 +235,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// viewed. Both come straight from the tree item's full path.
 			m.inputBuffer = ""
 			if path := m.copyPath(); path != "" {
-				m.copyStatus = "Copied " + path
+				m.statusNotice = "Copied " + path
 				return m, copyToClipboardCmd(path)
 			}
 			return m, nil
@@ -251,12 +251,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if n != 1 {
 						label += "s"
 					}
-					m.copyStatus = label
+					m.statusNotice = label
 					m.visualMode = false
 					return m, copyToClipboardCmd(text)
 				}
 			}
 			return m, nil
+
+		case "+", "=":
+			// Increase diff context lines (more surrounding code) and reload the
+			// current file. No-op for piped diffs — context is fixed at the source.
+			m.inputBuffer = ""
+			if m.pipedDiff != "" {
+				m.statusNotice = "Context fixed for piped diffs"
+				return m, nil
+			}
+			m.contextLines++
+			return m, m.reloadWithContextCmd()
+
+		case "-":
+			// Decrease diff context lines (floor at 0) and reload the current file.
+			m.inputBuffer = ""
+			if m.pipedDiff != "" {
+				m.statusNotice = "Context fixed for piped diffs"
+				return m, nil
+			}
+			if m.contextLines > 0 {
+				m.contextLines--
+			}
+			return m, m.reloadWithContextCmd()
 
 		case "z":
 			if m.focus == FocusDiff {
@@ -396,7 +419,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, m.selectedPath)}
 					})
 				} else {
-					cmds = append(cmds, m.vcs.DiffCmd(m.targetBranch, m.selectedPath))
+					cmds = append(cmds, m.vcs.DiffCmd(m.targetBranch, m.selectedPath, m.contextLines))
 				}
 			}
 		}
@@ -568,7 +591,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, m.selectedPath)}
 			}
 		}
-		return m, m.vcs.DiffCmd(m.targetBranch, m.selectedPath)
+		return m, m.vcs.DiffCmd(m.targetBranch, m.selectedPath, m.contextLines)
 
 	case RefreshedPipedDiffMsg:
 		if msg.Err != nil {

@@ -14,8 +14,8 @@ type fakeVCS struct{}
 func (fakeVCS) GetCurrentBranch() string                          { return "" }
 func (fakeVCS) GetRepoName() string                               { return "" }
 func (fakeVCS) ListChangedFiles(string) ([]string, error)         { return nil, nil }
-func (fakeVCS) DiffCmd(string, string) tea.Cmd                    { return nil }
-func (fakeVCS) DiffSync(string, string) string                    { return "" }
+func (fakeVCS) DiffCmd(string, string, int) tea.Cmd               { return nil }
+func (fakeVCS) DiffSync(string, string, int) string               { return "" }
 func (fakeVCS) OpenEditorCmd(string, int, string, string) tea.Cmd { return nil }
 func (fakeVCS) DiffStats(string) (int, int, error)                { return 0, 0, nil }
 func (fakeVCS) DiffStatsByFile(string) (map[string][2]int, error) { return nil, nil }

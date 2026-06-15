@@ -21,13 +21,18 @@ type UIConfig struct {
 	// (true) or are truncated with "…" (false, default). Toggled at runtime
 	// with the 'w' key.
 	Wrap bool `yaml:"wrap"`
+	// ContextLines is the number of unchanged lines shown around each change
+	// in native (non-piped) mode. Defaults to 3 (git/hg's default); overridable
+	// via the -U/--context flag and adjustable at runtime with '+'/'-'.
+	ContextLines int `yaml:"context_lines"`
 }
 
 func Load() Config {
 	cfg := Config{
 		UI: UIConfig{
-			LineNumbers: "hybrid",
-			Theme:       "default",
+			LineNumbers:  "hybrid",
+			Theme:        "default",
+			ContextLines: 3,
 		},
 	}
 

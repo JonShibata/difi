@@ -97,9 +97,15 @@ type Model struct {
 	showHelp bool
 	flatMode bool
 
-	// copyStatus holds a transient "Copied <path>" notice shown in the status
-	// bar after the 'c' key. Cleared on the next keypress.
-	copyStatus string
+	// statusNotice holds a transient message shown in the status bar (e.g.
+	// "Copied <path>" after 'c'/'y', or "Context: N" after '+'/'-'). Cleared
+	// on the next keypress.
+	statusNotice string
+
+	// contextLines is the number of unchanged lines shown around each change in
+	// native (non-piped) mode, passed to the VCS diff command. Seeded from
+	// config and adjusted at runtime with '+'/'-'.
+	contextLines int
 
 	width, height int
 
@@ -168,6 +174,7 @@ func NewModel(cfg config.Config, targetBranch string, pipedDiff string, refreshC
 		visualMode:    false,
 		visualStart:   0,
 		wrap:          cfg.UI.Wrap,
+		contextLines:  cfg.UI.ContextLines,
 	}
 
 	for idx, item := range items {
@@ -189,7 +196,7 @@ func (m Model) Init() tea.Cmd {
 				return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, m.selectedPath)}
 			})
 		} else {
-			cmds = append(cmds, m.vcs.DiffCmd(m.targetBranch, m.selectedPath))
+			cmds = append(cmds, m.vcs.DiffCmd(m.targetBranch, m.selectedPath, m.contextLines))
 		}
 	}
 
@@ -286,6 +293,21 @@ func copyToClipboardCmd(s string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// reloadWithContextCmd re-fetches the current file's diff at the current
+// contextLines setting and sets a transient notice. The cursor's file line is
+// preserved across the reload via the preEdit mechanism (diff line indices
+// shift when context changes). Returns nil when no file is selected. Callers
+// guard against piped mode, where a pre-supplied diff can't be re-fetched.
+func (m *Model) reloadWithContextCmd() tea.Cmd {
+	m.statusNotice = "Context: " + strconv.Itoa(m.contextLines)
+	if m.selectedPath == "" {
+		return nil
+	}
+	m.preEditPath = m.selectedPath
+	m.preEditLine = m.vcs.CalculateFileLine(m.diffLines, m.diffCursor)
+	return m.vcs.DiffCmd(m.targetBranch, m.selectedPath, m.contextLines)
 }
 
 func (m Model) fetchStatsCmd(target string) tea.Cmd {
@@ -699,7 +721,7 @@ func (m *Model) globalSearch() {
 			diffContent = m.vcs.ExtractFileDiff(m.pipedDiff, ti.FullPath)
 		} else {
 			// Non-piped: fetch diff synchronously (safe — just runs git/hg diff)
-			diffContent = m.vcs.DiffSync(m.targetBranch, ti.FullPath)
+			diffContent = m.vcs.DiffSync(m.targetBranch, ti.FullPath, m.contextLines)
 		}
 		if diffContent == "" {
 			continue
@@ -773,7 +795,7 @@ func (m *Model) jumpToGlobalMatch() tea.Cmd {
 						return vcs.DiffMsg{Content: m.vcs.ExtractFileDiff(m.pipedDiff, match.FilePath)}
 					}
 				}
-				return m.vcs.DiffCmd(m.targetBranch, match.FilePath)
+				return m.vcs.DiffCmd(m.targetBranch, match.FilePath, m.contextLines)
 			}
 		}
 	}

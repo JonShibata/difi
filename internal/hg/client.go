@@ -85,9 +85,10 @@ func ListChangedFiles(target string) ([]string, error) {
 	return files, nil
 }
 
-func DiffCmd(target, path string) tea.Cmd {
+func DiffCmd(target, path string, contextLines int) tea.Cmd {
+	u := unifiedValue(contextLines)
 	return func() tea.Msg {
-		out, err := hgCmd("diff", "--change", target, path).Output()
+		out, err := hgCmd("diff", "-U", u, "--change", target, path).Output()
 		if err != nil {
 			return DiffMsg{Content: "Error: " + err.Error()}
 		}
@@ -96,7 +97,7 @@ func DiffCmd(target, path string) tea.Cmd {
 		if content == "" {
 			if _, err := os.Stat(path); err == nil {
 				/* diff untracked file as full addition */
-				out, _ = exec.Command("hg", "diff", "--git", "/dev/null", path).Output()
+				out, _ = exec.Command("hg", "diff", "-U", u, "--git", "/dev/null", path).Output()
 				content = string(out)
 			}
 		}
@@ -104,19 +105,29 @@ func DiffCmd(target, path string) tea.Cmd {
 	}
 }
 
-func DiffSync(target, path string) string {
-	out, err := hgCmd("diff", "--change", target, path).Output()
+func DiffSync(target, path string, contextLines int) string {
+	u := unifiedValue(contextLines)
+	out, err := hgCmd("diff", "-U", u, "--change", target, path).Output()
 	if err != nil {
 		return ""
 	}
 	content := string(out)
 	if content == "" {
 		if _, err := os.Stat(path); err == nil {
-			out, _ = exec.Command("hg", "diff", "--git", "/dev/null", path).Output()
+			out, _ = exec.Command("hg", "diff", "-U", u, "--git", "/dev/null", path).Output()
 			content = string(out)
 		}
 	}
 	return content
+}
+
+// unifiedValue renders the context-line count for hg's -U flag, clamping
+// negatives to 0.
+func unifiedValue(contextLines int) string {
+	if contextLines < 0 {
+		contextLines = 0
+	}
+	return strconv.Itoa(contextLines)
 }
 
 // BuildEditorCmd assembles the *exec.Cmd that launches $EDITOR on `path`.

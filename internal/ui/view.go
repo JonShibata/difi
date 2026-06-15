@@ -430,13 +430,13 @@ func (m Model) viewStatusBar() string {
 	shortcuts := shortcutsStyle.Render("? Help  / Search  q Quit  Tab Switch  v Visual  f Flat")
 
 	rightInfo := ""
-	if m.copyStatus != "" {
+	if m.statusNotice != "" {
 		// Truncate so a long path can't push the shortcuts off-screen.
 		max := m.width - lipgloss.Width(shortcuts) - 2
 		if max < 8 {
 			max = 8
 		}
-		rightInfo = " " + ansi.Truncate(m.copyStatus, max, "…") + " "
+		rightInfo = " " + ansi.Truncate(m.statusNotice, max, "…") + " "
 	} else if m.searchQuery != "" {
 		matchCount := len(m.searchMatches)
 		if m.globalSearchMode {
@@ -487,6 +487,7 @@ func (m Model) renderHelpDrawer() string {
 	col6 := lipgloss.JoinVertical(lipgloss.Left,
 		HelpTextStyle.Render("/     Search"),
 		HelpTextStyle.Render("n/N   Next/Prev"),
+		HelpTextStyle.Render("+/-   Context Lines"),
 	)
 	return HelpDrawerStyle.Copy().
 		Width(m.width).

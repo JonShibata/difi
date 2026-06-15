@@ -96,6 +96,7 @@ git diff | difi
 | `e` / `Enter` | Edit file (opens editor at selected line)    |
 | `c`           | Copy highlighted path (dir or file) to clipboard |
 | `y`           | Yank selected line(s) — visual selection or current line |
+| `+ / -`       | Increase / decrease diff context lines (native mode) |
 | `?`           | Toggle help drawer                           |
 | `q`           | Quit                                         |
 
@@ -111,9 +112,12 @@ editor: "nvim"
 ui:
   line_numbers: "hybrid"
   theme: "default"
+  context_lines: 3 # Lines of context shown around each change
   diff_add_bg: "#2b3328" # Optional: Custom background for added lines
   diff_del_bg: "#4a2323" # Optional: Custom background for deleted lines
 ```
+
+Context lines can also be set per-run with `-U N` / `--context N` (e.g. `difi -U 10 main`), or adjusted live with `+` / `-`. When piping a diff in, set context at the source instead (e.g. `git diff -U10 | difi` or `jj diff --git --context=10 | difi`).
 
 ### Options
 
@@ -122,6 +126,7 @@ ui:
 | `editor`          | `$DIFI_EDITOR`, `$EDITOR`, `$VISUAL`, or `vi` | The editor to open when pressing `e` on a file.          |
 | `ui.line_numbers` | `"hybrid"`                                    | The style of line numbers in the diff view.              |
 | `ui.theme`        | `"default"`                                   | The core theme used for syntax highlighting.             |
+| `ui.context_lines`| `3`                                           | Lines of context shown around each change (`-U`/`--context`, or `+`/`-` at runtime). |
 | `ui.diff_add_bg`  | `""`                                          | Hex code or terminal color for added line backgrounds.   |
 | `ui.diff_del_bg`  | `""`                                          | Hex code or terminal color for deleted line backgrounds. |
 

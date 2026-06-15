@@ -17,8 +17,8 @@ func (g GitVCS) GetRepoName() string      { return git.GetRepoName() }
 func (g GitVCS) ListChangedFiles(targetBranch string) ([]string, error) {
 	return git.ListChangedFiles(targetBranch)
 }
-func (g GitVCS) DiffCmd(targetBranch, path string) tea.Cmd {
-	gitCmd := git.DiffCmd(targetBranch, path)
+func (g GitVCS) DiffCmd(targetBranch, path string, contextLines int) tea.Cmd {
+	gitCmd := git.DiffCmd(targetBranch, path, contextLines)
 	return func() tea.Msg {
 		msg := gitCmd()
 		if gitMsg, ok := msg.(git.DiffMsg); ok {
@@ -27,8 +27,8 @@ func (g GitVCS) DiffCmd(targetBranch, path string) tea.Cmd {
 		return msg
 	}
 }
-func (g GitVCS) DiffSync(targetBranch, path string) string {
-	return git.DiffSync(targetBranch, path)
+func (g GitVCS) DiffSync(targetBranch, path string, contextLines int) string {
+	return git.DiffSync(targetBranch, path, contextLines)
 }
 func (g GitVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	// tea.ExecProcess wraps the *exec.Cmd in an internal execMsg whose
@@ -62,8 +62,8 @@ func (h HgVCS) GetRepoName() string      { return hg.GetRepoName() }
 func (h HgVCS) ListChangedFiles(targetBranch string) ([]string, error) {
 	return hg.ListChangedFiles(targetBranch)
 }
-func (h HgVCS) DiffCmd(targetBranch, path string) tea.Cmd {
-	hgCmd := hg.DiffCmd(targetBranch, path)
+func (h HgVCS) DiffCmd(targetBranch, path string, contextLines int) tea.Cmd {
+	hgCmd := hg.DiffCmd(targetBranch, path, contextLines)
 	return func() tea.Msg {
 		msg := hgCmd()
 		if hgMsg, ok := msg.(hg.DiffMsg); ok {
@@ -72,8 +72,8 @@ func (h HgVCS) DiffCmd(targetBranch, path string) tea.Cmd {
 		return msg
 	}
 }
-func (h HgVCS) DiffSync(targetBranch, path string) string {
-	return hg.DiffSync(targetBranch, path)
+func (h HgVCS) DiffSync(targetBranch, path string, contextLines int) string {
+	return hg.DiffSync(targetBranch, path, contextLines)
 }
 func (h HgVCS) OpenEditorCmd(path string, lineNumber int, targetBranch string, editor string) tea.Cmd {
 	// See GitVCS.OpenEditorCmd for the rationale.

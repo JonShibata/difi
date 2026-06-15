@@ -69,9 +69,10 @@ func ListChangedFiles(targetBranch string) ([]string, error) {
 	return files, nil
 }
 
-func DiffCmd(targetBranch, path string) tea.Cmd {
+func DiffCmd(targetBranch, path string, contextLines int) tea.Cmd {
+	u := unifiedFlag(contextLines)
 	return func() tea.Msg {
-		out, err := gitCmd("diff", "--color=always", targetBranch, "--", path).Output()
+		out, err := gitCmd("diff", "--color=always", u, targetBranch, "--", path).Output()
 		if err != nil {
 			return DiffMsg{Content: "Error fetching diff: " + err.Error()}
 		}
@@ -79,7 +80,7 @@ func DiffCmd(targetBranch, path string) tea.Cmd {
 		content := string(out)
 		if content == "" {
 			if _, err := os.Stat(path); err == nil {
-				out, _ = exec.Command("git", "diff", "--color=always", "--no-index", "/dev/null", path).Output()
+				out, _ = exec.Command("git", "diff", "--color=always", u, "--no-index", "/dev/null", path).Output()
 				content = string(out)
 			}
 		}
@@ -88,19 +89,28 @@ func DiffCmd(targetBranch, path string) tea.Cmd {
 	}
 }
 
-func DiffSync(targetBranch, path string) string {
-	out, err := gitCmd("diff", "--color=always", targetBranch, "--", path).Output()
+func DiffSync(targetBranch, path string, contextLines int) string {
+	u := unifiedFlag(contextLines)
+	out, err := gitCmd("diff", "--color=always", u, targetBranch, "--", path).Output()
 	if err != nil {
 		return ""
 	}
 	content := string(out)
 	if content == "" {
 		if _, err := os.Stat(path); err == nil {
-			out, _ = exec.Command("git", "diff", "--color=always", "--no-index", "/dev/null", path).Output()
+			out, _ = exec.Command("git", "diff", "--color=always", u, "--no-index", "/dev/null", path).Output()
 			content = string(out)
 		}
 	}
 	return content
+}
+
+// unifiedFlag renders git's -U<n> context-lines flag, clamping negatives to 0.
+func unifiedFlag(contextLines int) string {
+	if contextLines < 0 {
+		contextLines = 0
+	}
+	return fmt.Sprintf("-U%d", contextLines)
 }
 
 func GetRepoRoot() string {

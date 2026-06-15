@@ -26,12 +26,17 @@ func main() {
 
 	forceVCS := flag.String("vcs", "", "Force specific VCS (git or hg)")
 
+	// -1 means "unset" — fall back to the config value (default 3).
+	contextLines := flag.Int("context", -1, "Lines of context shown around changes")
+	flag.IntVar(contextLines, "U", -1, "Lines of context (shorthand)")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s [options] [target]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  Show version\n")
 		fmt.Fprintf(os.Stderr, "  -p, --plain    Print a plain summary\n")
 		fmt.Fprintf(os.Stderr, "  -f, --flat     Use one-line file navigation\n")
+		fmt.Fprintf(os.Stderr, "  -U, --context  Lines of context shown around changes (default 3)\n")
 		fmt.Fprintf(os.Stderr, "  --vcs string   Force specific VCS (git or hg)\n")
 		fmt.Fprintf(os.Stderr, "\nTarget:\n")
 		fmt.Fprintf(os.Stderr, "  branch, commit, or tag to compare against (default: HEAD or tip)\n")
@@ -95,6 +100,9 @@ func main() {
 	}
 
 	cfg := config.Load()
+	if *contextLines >= 0 {
+		cfg.UI.ContextLines = *contextLines
+	}
 
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
 	if pipedDiff != "" {
