@@ -73,17 +73,35 @@ difi HEAD~1
 
 ## Piping & Alternative VCS
 
-You can also pass raw diffs directly into `difi` via standard input. This is perfect for patch files or other version control systems like Jujutsu:
+You can pass a raw diff directly into `difi` via standard input. This is perfect for patch files:
 
 ```bash
 # Review a saved patch file
 difi < changes.patch
 
-# Review changes in Jujutsu (jj)
-jj diff --git | difi
-
 # Pipe standard git diff output
 git diff | difi
+```
+
+A piped diff is **static** — `difi` can't re-run it, so context controls (`+`/`-`) are disabled.
+
+### `--cmd`: re-runnable diff source (recommended for jj & other VCS)
+
+For version control systems without a native backend (e.g. **Jujutsu**), give `difi` the command that produces the diff instead of piping it. `difi` runs and re-runs the command itself, so `+`/`-` (and `r`, and post-edit refresh) work. Include a `{context}` placeholder and `difi` substitutes the current context-line count:
+
+```bash
+# Review changes in jj, with working context controls
+difi --cmd "jj diff --git --context {context}"
+
+# Review the whole branch vs its fork point with trunk
+difi --cmd "jj diff --from 'fork_point(trunk()|@)' --to @ --git --context {context}"
+```
+
+This avoids the pipe entirely. Handy shell wrappers:
+
+```bash
+dv()  { difi --cmd "jj diff $* --git --context {context}"; }
+dvt() { difi --cmd "jj diff --from 'fork_point(trunk()|${1:-@})' --to ${1:-@} --git --context {context}"; }
 ```
 
 ## Controls

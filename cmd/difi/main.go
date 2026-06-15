@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/xguot/difi/internal/config"
@@ -30,6 +33,8 @@ func main() {
 	contextLines := flag.Int("context", -1, "Lines of context shown around changes")
 	flag.IntVar(contextLines, "U", -1, "Lines of context (shorthand)")
 
+	diffCmd := flag.String("cmd", "", "Command that prints a git-format diff; difi runs and re-runs it instead of reading stdin (supports a {context} placeholder)")
+
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s [options] [target]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Options:\n")
@@ -37,6 +42,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  -p, --plain    Print a plain summary\n")
 		fmt.Fprintf(os.Stderr, "  -f, --flat     Use one-line file navigation\n")
 		fmt.Fprintf(os.Stderr, "  -U, --context  Lines of context shown around changes (default 3)\n")
+		fmt.Fprintf(os.Stderr, "  --cmd string   Command that prints a git-format diff (supports {context}); re-run on +/-/r\n")
 		fmt.Fprintf(os.Stderr, "  --vcs string   Force specific VCS (git or hg)\n")
 		fmt.Fprintf(os.Stderr, "\nTarget:\n")
 		fmt.Fprintf(os.Stderr, "  branch, commit, or tag to compare against (default: HEAD or tip)\n")
@@ -49,16 +55,36 @@ func main() {
 		os.Exit(0)
 	}
 
+	cfg := config.Load()
+	if *contextLines >= 0 {
+		cfg.UI.ContextLines = *contextLines
+	}
+
+	// difi's diff source, in priority order:
+	//   1. --cmd: difi runs (and re-runs) the command itself — the robust path
+	//      for VCSs with no native backend (e.g. jj). A {context} placeholder is
+	//      substituted with the current context-line count, so '+'/'-' and 'r'
+	//      re-run with the right context.
+	//   2. a stdin pipe: a static diff blob (optionally re-runnable via the
+	//      legacy DIFI_REFRESH_CMD env var).
+	//   3. neither: native git/hg diffing.
 	var pipedDiff string
-	if stat, _ := os.Stdin.Stat(); (stat.Mode() & os.ModeCharDevice) == 0 {
+	var stdinPiped bool
+	refreshCmd := os.Getenv("DIFI_REFRESH_CMD")
+	if *diffCmd != "" {
+		refreshCmd = *diffCmd
+		initial := strings.ReplaceAll(*diffCmd, "{context}", strconv.Itoa(cfg.UI.ContextLines))
+		out, err := exec.Command("sh", "-c", initial).Output()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error running --cmd: %v\n", err)
+			os.Exit(1)
+		}
+		pipedDiff = string(out)
+	} else if stat, _ := os.Stdin.Stat(); (stat.Mode() & os.ModeCharDevice) == 0 {
+		stdinPiped = true
 		b, _ := io.ReadAll(os.Stdin)
 		pipedDiff = string(b)
 	}
-
-	// DIFI_REFRESH_CMD lets a wrapper (e.g. `dvt`) tell difi how to re-run
-	// the diff producer. When set and stdin was piped, difi re-executes this
-	// command via `sh -c` after $EDITOR exits and rebuilds the view.
-	refreshCmd := os.Getenv("DIFI_REFRESH_CMD")
 
 	// Detect or force VCS type
 	var vcsClient vcs.VCS
@@ -99,13 +125,8 @@ func main() {
 		os.Exit(0)
 	}
 
-	cfg := config.Load()
-	if *contextLines >= 0 {
-		cfg.UI.ContextLines = *contextLines
-	}
-
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
-	if pipedDiff != "" {
+	if stdinPiped {
 		if tty, err := os.Open("/dev/tty"); err == nil {
 			opts = append(opts, tea.WithInput(tty))
 		}

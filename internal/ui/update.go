@@ -259,21 +259,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "+", "=":
-			// Increase diff context lines (more surrounding code) and reload the
-			// current file. No-op for piped diffs — context is fixed at the source.
+			// Increase diff context lines (more surrounding code) and reload.
+			// Works natively or via a --cmd source with a {context} placeholder;
+			// a static pipe (e.g. `cat patch | difi`) can't be re-diffed.
 			m.inputBuffer = ""
-			if m.pipedDiff != "" {
-				m.statusNotice = "Context fixed for piped diffs"
+			if !m.contextAdjustable() {
+				m.statusNotice = "Context not adjustable for this diff source"
 				return m, nil
 			}
 			m.contextLines++
 			return m, m.reloadWithContextCmd()
 
 		case "-":
-			// Decrease diff context lines (floor at 0) and reload the current file.
+			// Decrease diff context lines (floor at 0) and reload.
 			m.inputBuffer = ""
-			if m.pipedDiff != "" {
-				m.statusNotice = "Context fixed for piped diffs"
+			if !m.contextAdjustable() {
+				m.statusNotice = "Context not adjustable for this diff source"
 				return m, nil
 			}
 			if m.contextLines > 0 {

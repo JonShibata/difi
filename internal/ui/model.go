@@ -209,18 +209,30 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// refreshPipedDiffCmd runs DIFI_REFRESH_CMD via `sh -c` and returns the
-// captured stdout as a RefreshedPipedDiffMsg. Returns nil if no refresh
-// command is configured.
+// refreshPipedDiffCmd re-runs the diff producer (--cmd or the legacy
+// DIFI_REFRESH_CMD) via `sh -c` and returns its stdout as a
+// RefreshedPipedDiffMsg. Any {context} placeholder is substituted with the
+// current context-line count. Returns nil if no command is configured.
 func (m Model) refreshPipedDiffCmd() tea.Cmd {
 	if m.refreshCmd == "" {
 		return nil
 	}
-	cmd := m.refreshCmd
+	cmd := strings.ReplaceAll(m.refreshCmd, "{context}", strconv.Itoa(m.contextLines))
 	return func() tea.Msg {
 		out, err := exec.Command("sh", "-c", cmd).Output()
 		return RefreshedPipedDiffMsg{Content: string(out), Err: err}
 	}
+}
+
+// contextAdjustable reports whether '+'/'-' can change the diff's context
+// lines for the current source: always in native mode, and for a command/piped
+// source only when the producer command carries a {context} placeholder difi
+// can vary (a static `cat patch | difi` pipe cannot).
+func (m Model) contextAdjustable() bool {
+	if m.pipedDiff == "" {
+		return true
+	}
+	return strings.Contains(m.refreshCmd, "{context}")
 }
 
 // copyPath returns the value the 'c' key copies to the clipboard: the path of
@@ -302,11 +314,18 @@ func copyToClipboardCmd(s string) tea.Cmd {
 // guard against piped mode, where a pre-supplied diff can't be re-fetched.
 func (m *Model) reloadWithContextCmd() tea.Cmd {
 	m.statusNotice = "Context: " + strconv.Itoa(m.contextLines)
+	if m.selectedPath != "" {
+		m.preEditPath = m.selectedPath
+		m.preEditLine = m.vcs.CalculateFileLine(m.diffLines, m.diffCursor)
+	}
+	// Command/piped source: re-run the producer with the new {context}; the
+	// rebuild re-issues a DiffMsg that restores the cursor from preEdit.
+	if m.pipedDiff != "" {
+		return m.refreshPipedDiffCmd()
+	}
 	if m.selectedPath == "" {
 		return nil
 	}
-	m.preEditPath = m.selectedPath
-	m.preEditLine = m.vcs.CalculateFileLine(m.diffLines, m.diffCursor)
 	return m.vcs.DiffCmd(m.targetBranch, m.selectedPath, m.contextLines)
 }
 
