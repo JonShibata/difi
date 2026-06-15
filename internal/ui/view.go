@@ -427,7 +427,7 @@ func (m Model) viewStatusBar() string {
 	}
 
 	shortcutsStyle := StatusKeyStyle.Copy().Background(barBg)
-	shortcuts := shortcutsStyle.Render("? Help  / Search  q Quit  Tab Switch  V Visual  f Flat")
+	shortcuts := shortcutsStyle.Render("? Help  / Search  q Quit  Tab Switch  v Visual  f Flat")
 
 	rightInfo := ""
 	if m.copyStatus != "" {
@@ -480,7 +480,7 @@ func (m Model) renderHelpDrawer() string {
 		HelpTextStyle.Render("y     Yank Lines"),
 	)
 	col5 := lipgloss.JoinVertical(lipgloss.Left,
-		HelpTextStyle.Render("V     Visual Mode"),
+		HelpTextStyle.Render("v/V   Visual Mode"),
 		HelpTextStyle.Render("f     Flat Mode"),
 		HelpTextStyle.Render("esc   Cancel"),
 	)

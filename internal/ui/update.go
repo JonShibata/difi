@@ -104,7 +104,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "V":
+		case "V", "v":
 			if m.focus == FocusDiff {
 				m.visualMode = !m.visualMode
 				if m.visualMode {
