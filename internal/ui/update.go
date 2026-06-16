@@ -259,26 +259,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "+", "=":
-			// Increase diff context lines (more surrounding code) and reload.
-			// Works natively or via a --cmd source with a {context} placeholder;
-			// a static pipe (e.g. `cat patch | difi`) can't be re-diffed.
-			m.inputBuffer = ""
+			// Increase diff context lines and reload. A numeric prefix sets the
+			// step (e.g. "5+" = +5), like difi's "5j"; bare "+" is +1. Works
+			// natively or via a --cmd source with a {context} placeholder; a
+			// static pipe (e.g. `cat patch | difi`) can't be re-diffed.
 			if !m.contextAdjustable() {
+				m.inputBuffer = ""
 				m.statusNotice = "Context not adjustable for this diff source"
 				return m, nil
 			}
-			m.contextLines++
+			m.contextLines += m.getRepeatCount()
 			return m, m.reloadWithContextCmd()
 
 		case "-":
-			// Decrease diff context lines (floor at 0) and reload.
-			m.inputBuffer = ""
+			// Decrease diff context lines (floor at 0) and reload. Numeric prefix
+			// sets the step, e.g. "5-" = -5; bare "-" is -1.
 			if !m.contextAdjustable() {
+				m.inputBuffer = ""
 				m.statusNotice = "Context not adjustable for this diff source"
 				return m, nil
 			}
-			if m.contextLines > 0 {
-				m.contextLines--
+			m.contextLines -= m.getRepeatCount()
+			if m.contextLines < 0 {
+				m.contextLines = 0
 			}
 			return m, m.reloadWithContextCmd()
 

@@ -114,7 +114,7 @@ dvt() { difi --cmd "jj diff --from 'fork_point(trunk()|${1:-@})' --to ${1:-@} --
 | `e` / `Enter` | Edit file (opens editor at selected line)    |
 | `c`           | Copy highlighted path (dir or file) to clipboard |
 | `y`           | Yank selected line(s) — visual selection or current line |
-| `+ / -`       | Increase / decrease diff context lines (native mode) |
+| `+ / -`       | Increase / decrease diff context lines (prefix a count, e.g. `5+`) |
 | `?`           | Toggle help drawer                           |
 | `q`           | Quit                                         |
 
@@ -135,7 +135,7 @@ ui:
   diff_del_bg: "#4a2323" # Optional: Custom background for deleted lines
 ```
 
-Context lines can also be set per-run with `-U N` / `--context N` (e.g. `difi -U 10 main`), or adjusted live with `+` / `-`. When piping a diff in, set context at the source instead (e.g. `git diff -U10 | difi` or `jj diff --git --context=10 | difi`).
+Context lines can also be set per-run with `-U N` / `--context N` (e.g. `difi -U 10 main`), or adjusted live with `+` / `-`. Prefix a count to step by more than one, like difi's `5j` — e.g. `5+` adds 5, `25-` removes 25. When piping a diff in, set context at the source instead (e.g. `git diff -U10 | difi` or `jj diff --git --context=10 | difi`).
 
 ### Options
 
